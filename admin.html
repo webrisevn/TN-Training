@@ -232,7 +232,7 @@ tr:hover td{background:#fafbff}
     </nav>
     <div class="me">
       <div id="meName">—</div>
-      <a href="#" onclick="doLogout();return false" style="color:#ffd28a">Đăng xuất</a>
+      <a href="#" onclick="changeMyPassword();return false" style="color:#ffd28a;margin-right:12px">Đổi mật khẩu</a><a href="#" onclick="doLogout();return false" style="color:#ffd28a">Đăng xuất</a>
     </div>
   </aside>
   <main class="main">
@@ -352,6 +352,26 @@ async function doLogin(){
   await afterLogin();
 }
 async function doLogout(){await sb.auth.signOut();location.reload();}
+function changeMyPassword(){
+  modal('<button class="x" onclick="closeModal()">×</button><h3>Đổi mật khẩu</h3>'
+   +'<label class="fl">Mật khẩu mới (≥ 6 ký tự)</label><input class="input" id="cpNew" type="password"/>'
+   +'<label class="fl">Nhập lại mật khẩu mới</label><input class="input" id="cpNew2" type="password"/>'
+   +'<div id="cpMsg" style="margin-top:10px"></div>'
+   +'<button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:14px" id="cpBtn" onclick="submitChangePassword()">Cập nhật</button>');
+}
+async function submitChangePassword(){
+  var p1=document.getElementById('cpNew').value, p2=document.getElementById('cpNew2').value;
+  var msg=document.getElementById('cpMsg');
+  if(!p1||p1.length<6){msg.innerHTML='<span style="color:#b00">Mật khẩu tối thiểu 6 ký tự.</span>';return;}
+  if(p1!==p2){msg.innerHTML='<span style="color:#b00">Hai mật khẩu chưa khớp.</span>';return;}
+  var btn=document.getElementById('cpBtn');btn.disabled=true;btn.textContent='Đang cập nhật...';
+  var r=await sb.auth.updateUser({password:p1});
+  btn.disabled=false;btn.textContent='Cập nhật';
+  if(r.error){msg.innerHTML='<span style="color:#b00">Lỗi: '+esc(r.error.message)+'</span>';return;}
+  try{ await sb.from('profiles').update({status:'active'}).eq('id',ME.id); }catch(e){}
+  msg.innerHTML='<span style="color:#0b6b3a">✓ Đã đổi mật khẩu. Lần sau đăng nhập bằng mật khẩu mới.</span>';
+  setTimeout(closeModal,1500);
+}
 async function afterLogin(){
   const {data:{user}}=await sb.auth.getUser();
   if(!user)return;
