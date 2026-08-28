@@ -228,6 +228,7 @@ tr:hover td{background:#fafbff}
       <a data-v="learners">👥 Học viên</a>
       <a data-v="bank">🗂️ Ngân hàng câu hỏi</a>
       <a data-v="setup">🏢 Khoa &amp; Khóa học</a>
+      <a data-v="mycourses" id="navMyCourses" style="display:none">📚 Khóa học của tôi</a>
       <a data-v="admin" id="navAdmin" style="display:none">⚙️ Quản trị</a>
     </nav>
     <div class="me">
@@ -306,6 +307,10 @@ tr:hover td{background:#fafbff}
           <div id="courseList" style="margin-top:12px"></div>
         </div>
       </div>
+    </section>
+    <section id="v-mycourses" class="hidden">
+      <div class="head"><h2>📚 Khóa học của tôi</h2><button class="btn btn-gold" onclick="openCreateCourse()">＋ Tạo khóa học</button></div>
+      <div class="card"><div id="mcFilter" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap"></div><div id="mcList"></div></div>
     </section>
     <section id="v-admin" class="hidden">
       <div class="head"><h2>⚙️ Quản trị</h2></div>
@@ -390,8 +395,8 @@ sb.auth.getSession().then(({data})=>{if(data.session)afterLogin();});
 /* ---------- NAV ---------- */
 function nav(v){
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-   ['dash','assess','learners','bank','setup','admin'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
-   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='admin')renderAdmin();
+   ['dash','assess','learners','bank','setup','admin','mycourses'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
+   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='admin')renderAdmin(); if(v==='mycourses')renderMyCourses();
 }
 document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>nav(a.dataset.v));
 /* ---------- RBAC (Phase 1) ---------- */
@@ -399,6 +404,7 @@ function applyRole(){
   var na=document.getElementById('navAdmin'); if(na) na.style.display = ROLE==='admin'?'':'none';
   var ad=document.getElementById('btnAddDept'); if(ad) ad.style.display = ROLE==='admin'?'':'none';
   var ac=document.getElementById('btnAddCourse'); if(ac) ac.style.display = (ROLE==='admin'||ROLE==='trainer')?'':'none';
+  var mc=document.getElementById('navMyCourses'); if(mc) mc.style.display = (ROLE==='admin'||ROLE==='trainer')?'':'none';
 }
 async function reqAccess(courseId){
   var {error}=await sb.from('course_access').insert({course_id:courseId,trainer_id:ME.id,status:'pending'});
@@ -492,6 +498,127 @@ async function setUserActive(uid,active){
 }
 
 
+/* ---------- 2.2/2.3 TRAINER WORKSPACE ---------- */
+var MC_FILTER='all';
+function courseStatusBadge(st){var m={draft:['#64748b','Draft'],review:['#8a6d00','Review'],published:['#0b6b3a','Published'],archived:['#7a1f1f','Archived']};var x=m[st||'draft']||m.draft;return '<span class="pill" style="background:'+x[0]+';color:#fff">'+x[1]+'</span>';}
+function myVisibleCourses(){
+  if(ROLE==='admin'||ROLE==='manager') return COURSES.slice();
+  var appr=(ACCESS||[]).filter(function(a){return a.trainer_id===ME.id&&a.status==='approved';}).map(function(a){return a.course_id;});
+  return COURSES.filter(function(c){return c.owner_id===ME.id||appr.indexOf(c.id)>=0;});
+}
+function renderMyCourses(){
+  var fils=[['all','Tất cả'],['draft','Draft'],['review','Review'],['published','Published'],['archived','Archived']];
+  document.getElementById('mcFilter').innerHTML=fils.map(function(f){return '<button class="btn '+(MC_FILTER===f[0]?'btn-navy':'btn-ghost')+' btn-sm" onclick="MC_FILTER=\''+f[0]+'\';renderMyCourses()">'+f[1]+'</button>';}).join('');
+  var list=myVisibleCourses().filter(function(c){return MC_FILTER==='all'||(c.status||'draft')===MC_FILTER;});
+  document.getElementById('mcList').innerHTML = list.length ? list.map(function(c){
+    var own=c.owner_id===ME.id||ROLE==='admin';
+    return '<div style="border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'
+      +'<div style="min-width:220px"><b style="font-size:15px">'+esc(c.name)+'</b> '+courseStatusBadge(c.status)
+        +'<div style="color:#7a869a;font-size:12px;margin-top:4px">'+esc(c.topic||c.description||'')+'</div></div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<button class="btn btn-ghost btn-sm" onclick="openCourseEditor(\''+c.id+'\')">'+(own?'✏️ Chỉnh sửa':'👁 Mở')+'</button>'
+      + (own&&(c.status!=='published') ? '<button class="btn btn-gold btn-sm" onclick="setCourseStatus(\''+c.id+'\',\'published\')">🚀 Publish</button>' : '')
+      + (own&&(c.status==='published') ? '<button class="btn btn-ghost btn-sm" onclick="setCourseStatus(\''+c.id+'\',\'draft\')">Về Draft</button>' : '')
+      +'</div></div></div>';
+  }).join('') : '<div class="empty">Chưa có khóa học. Bấm ＋ Tạo khóa học để bắt đầu.</div>';
+}
+async function setCourseStatus(id,st){
+  var r=await sb.from('courses').update({status:st,updated_at:new Date().toISOString()}).eq('id',id);
+  if(r.error)return toast('Lỗi: '+r.error.message);
+  await loadAll(); renderMyCourses(); toast('Đã cập nhật trạng thái');
+}
+function openCreateCourse(){
+  var deptOpts='<option value="">— Không —</option>'+DEPTS.map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
+  modal('<button class="x" onclick="closeModal()">×</button><h3>＋ Tạo khóa học</h3>'
+   +'<label class="fl">Tên khóa học *</label><input class="input" id="ccName"/>'
+   +'<label class="fl">Mô tả</label><input class="input" id="ccDesc"/>'
+   +'<label class="fl">Đối tượng học viên</label><input class="input" id="ccAud"/>'
+   +'<label class="fl">Mục tiêu đào tạo</label><input class="input" id="ccObj"/>'
+   +'<div style="display:flex;gap:8px"><div style="flex:1"><label class="fl">Thời lượng</label><input class="input" id="ccDur" placeholder="vd 6 buổi"/></div><div style="flex:1"><label class="fl">Chủ đề</label><input class="input" id="ccTopic"/></div></div>'
+   +'<label class="fl">Khoa/Đơn vị</label><select id="ccDept">'+deptOpts+'</select>'
+   +'<div id="ccMsg" style="margin-top:10px"></div>'
+   +'<button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:14px" onclick="submitCreateCourse()">Tạo khóa học</button>');
+}
+async function submitCreateCourse(){
+  var name=document.getElementById('ccName').value.trim();
+  if(!name){document.getElementById('ccMsg').innerHTML='<span style="color:#b00">Nhập tên khóa học.</span>';return;}
+  var rec={org_id:ORG.id,owner_id:ME.id,name:name,description:document.getElementById('ccDesc').value.trim()||null,
+    audience:document.getElementById('ccAud').value.trim()||null,objectives:document.getElementById('ccObj').value.trim()||null,
+    duration:document.getElementById('ccDur').value.trim()||null,topic:document.getElementById('ccTopic').value.trim()||null,
+    department_id:document.getElementById('ccDept').value||null,status:'draft'};
+  var r=await sb.from('courses').insert(rec).select().single();
+  if(r.error){document.getElementById('ccMsg').innerHTML='<span style="color:#b00">Lỗi: '+esc(r.error.message)+'</span>';return;}
+  closeModal(); await loadAll(); renderMyCourses(); openCourseEditor(r.data.id);
+}
+async function openCourseEditor(id){
+  var c=COURSES.find(function(x){return x.id===id;}); if(!c)return;
+  var own=c.owner_id===ME.id||ROLE==='admin';
+  modal('<button class="x" onclick="closeModal()">×</button><h3>📘 '+esc(c.name)+'</h3><div id="ceBody">Đang tải...</div>', true);
+  var sr=await sb.from('course_sources').select('*').eq('course_id',id).order('created_at');
+  var srcs=sr.data||[];
+  var meta = own ? (
+     '<div class="card" style="margin-bottom:12px"><b>Thông tin khóa học</b>'
+     +'<label class="fl">Tên *</label><input class="input" id="ceName" value="'+esc(c.name)+'"/>'
+     +'<label class="fl">Mô tả</label><input class="input" id="ceDesc" value="'+esc(c.description||'')+'"/>'
+     +'<div style="display:flex;gap:8px"><div style="flex:1"><label class="fl">Đối tượng</label><input class="input" id="ceAud" value="'+esc(c.audience||'')+'"/></div><div style="flex:1"><label class="fl">Thời lượng</label><input class="input" id="ceDur" value="'+esc(c.duration||'')+'"/></div></div>'
+     +'<label class="fl">Mục tiêu</label><input class="input" id="ceObj" value="'+esc(c.objectives||'')+'"/>'
+     +'<label class="fl">Chủ đề</label><input class="input" id="ceTopic" value="'+esc(c.topic||'')+'"/>'
+     +'<button class="btn btn-navy btn-sm" style="margin-top:8px" onclick="saveCourseMeta(\''+id+'\')">💾 Lưu thông tin</button></div>'
+  ) : ('<div class="card" style="margin-bottom:12px"><b>'+esc(c.name)+'</b><div style="color:#7a869a;font-size:13px;margin-top:6px">'+esc(c.description||'')+'</div></div>');
+  var srcRows=(srcs.length?srcs:[]).map(function(x){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)">'
+      +'<span>'+(x.kind==='url'?'🔗':'📄')+' '+esc(x.title||x.url||x.storage_path||'')+'</span>'
+      +'<span style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="openSource(\''+x.id+'\')">Xem</button>'
+      +(own?'<button class="btn btn-danger btn-sm" onclick="delSource(\''+x.id+'\',\''+id+'\')">🗑</button>':'')+'</span></div>';
+  }).join('')||'<div class="empty">Chưa có nguồn nào.</div>';
+  var addSrc = own ? (
+     '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="file" id="ceFile" accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx"/><button class="btn btn-navy btn-sm" onclick="uploadSource(\''+id+'\')">⬆️ Tải file lên</button></div>'
+     +'<div style="margin-top:8px;display:flex;gap:8px"><input class="input" id="ceUrl" placeholder="Dán URL tài liệu..." style="flex:1"/><button class="btn btn-navy btn-sm" onclick="addUrlSource(\''+id+'\')">＋ Thêm URL</button></div>') : '';
+  document.getElementById('ceBody').innerHTML = meta
+   +'<div class="card"><b>📎 Nguồn kiến thức</b><div id="ceSrcList" style="margin-top:8px">'+srcRows+'</div>'+addSrc+'</div>'
+   +'<div class="card" style="margin-top:12px"><b>🤖 Nội dung AI</b><div style="color:#7a869a;font-size:13px;margin-top:6px">Sau khi thêm nguồn kiến thức, AI sẽ phân tích & đề xuất cấu trúc khóa học + bài giảng (Module 2.4 — bước kế tiếp).</div><button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="toast(\'Tính năng AI bật ở Module 2.4 (bước kế tiếp)\')">🤖 AI Phân tích tài liệu</button></div>';
+}
+async function saveCourseMeta(id){
+  var name=document.getElementById('ceName').value.trim(); if(!name)return toast('Tên không được trống');
+  var rec={name:name,description:document.getElementById('ceDesc').value.trim()||null,audience:document.getElementById('ceAud').value.trim()||null,
+    duration:document.getElementById('ceDur').value.trim()||null,objectives:document.getElementById('ceObj').value.trim()||null,
+    topic:document.getElementById('ceTopic').value.trim()||null,updated_at:new Date().toISOString()};
+  var r=await sb.from('courses').update(rec).eq('id',id);
+  if(r.error)return toast('Lỗi: '+r.error.message);
+  await loadAll(); toast('Đã lưu thông tin');
+}
+async function uploadSource(courseId){
+  var el=document.getElementById('ceFile'); var f=el&&el.files[0]; if(!f)return toast('Chọn file trước');
+  if(f.size>25*1024*1024)return toast('File quá lớn (>25MB)');
+  var safe=f.name.replace(/[^a-zA-Z0-9._-]/g,'_'); var path=courseId+'/'+Date.now()+'_'+safe;
+  toast('Đang tải lên...');
+  var up=await sb.storage.from('course-sources').upload(path,f,{upsert:false});
+  if(up.error)return toast('Lỗi upload: '+up.error.message);
+  var r=await sb.from('course_sources').insert({course_id:courseId,kind:'file',title:f.name,storage_path:path,mime_type:f.type||null,size_bytes:f.size,created_by:ME.id});
+  if(r.error)return toast('Lỗi lưu: '+r.error.message);
+  toast('Đã tải lên'); openCourseEditor(courseId);
+}
+async function addUrlSource(courseId){
+  var el=document.getElementById('ceUrl'); var u=el&&el.value.trim(); if(!u)return toast('Nhập URL');
+  var r=await sb.from('course_sources').insert({course_id:courseId,kind:'url',title:u,url:u,created_by:ME.id});
+  if(r.error)return toast('Lỗi: '+r.error.message);
+  openCourseEditor(courseId);
+}
+async function openSource(sid){
+  var sr=await sb.from('course_sources').select('*').eq('id',sid).single(); var x=sr.data; if(!x)return;
+  if(x.kind==='url'){window.open(x.url,'_blank');return;}
+  var r=await sb.storage.from('course-sources').createSignedUrl(x.storage_path,3600);
+  if(r.error)return toast('Lỗi: '+r.error.message);
+  window.open(r.data.signedUrl,'_blank');
+}
+async function delSource(sid,courseId){
+  if(!confirm('Xóa nguồn này?'))return;
+  var sr=await sb.from('course_sources').select('*').eq('id',sid).single(); var x=sr.data;
+  if(x&&x.kind==='file'&&x.storage_path){ await sb.storage.from('course-sources').remove([x.storage_path]); }
+  await sb.from('course_sources').delete().eq('id',sid);
+  openCourseEditor(courseId);
+}
 /* ---------- LOAD ---------- */
 async function loadAll(){
   const org=ORG.id;
