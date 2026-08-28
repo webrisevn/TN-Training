@@ -327,6 +327,9 @@ tr:hover td{background:#fafbff}
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 /* ===== CẤU HÌNH ===== */
 const SUPABASE_URL="https://cunekfbevuenyxkygvlf.supabase.co";
@@ -577,7 +580,9 @@ async function openCourseEditor(id){
      +'<div style="margin-top:8px;display:flex;gap:8px"><input class="input" id="ceUrl" placeholder="Dán URL tài liệu..." style="flex:1"/><button class="btn btn-navy btn-sm" onclick="addUrlSource(\''+id+'\')">＋ Thêm URL</button></div>') : '';
   document.getElementById('ceBody').innerHTML = meta
    +'<div class="card"><b>📎 Nguồn kiến thức</b><div id="ceSrcList" style="margin-top:8px">'+srcRows+'</div>'+addSrc+'</div>'
-   +'<div class="card" style="margin-top:12px"><b>🤖 Nội dung AI</b><div style="color:#7a869a;font-size:13px;margin-top:6px">Sau khi thêm nguồn kiến thức, AI sẽ phân tích & đề xuất cấu trúc khóa học + bài giảng (Module 2.4 — bước kế tiếp).</div><button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="toast(\'Tính năng AI bật ở Module 2.4 (bước kế tiếp)\')">🤖 AI Phân tích tài liệu</button></div>';
+   +'<div class="card" style="margin-top:12px"><b>📖 Bài giảng (Lessons)</b><div id="ceLessons" style="margin-top:8px"><div class="empty">Đang tải...</div></div></div>'
+   +(own?'<div class="card" style="margin-top:12px"><b>🤖 AI Content Engine</b><div style="color:#7a869a;font-size:13px;margin-top:6px">AI đọc nguồn kiến thức + mục tiêu → đề xuất cấu trúc khóa học. Trainer duyệt trước khi tạo lesson (không tự publish).</div><div id="ceStruct" style="margin-top:8px"></div><button class="btn btn-gold btn-sm" id="ceAiBtn" style="margin-top:8px" onclick="aiAnalyze(\''+id+'\')">🤖 AI Phân tích tài liệu</button></div>':'');
+  renderCourseLessons(id);
 }
 async function saveCourseMeta(id){
   var name=document.getElementById('ceName').value.trim(); if(!name)return toast('Tên không được trống');
@@ -592,10 +597,11 @@ async function uploadSource(courseId){
   var el=document.getElementById('ceFile'); var f=el&&el.files[0]; if(!f)return toast('Chọn file trước');
   if(f.size>25*1024*1024)return toast('File quá lớn (>25MB)');
   var safe=f.name.replace(/[^a-zA-Z0-9._-]/g,'_'); var path=courseId+'/'+Date.now()+'_'+safe;
-  toast('Đang tải lên...');
-  var up=await sb.storage.from('course-sources').upload(path,f,{upsert:false});
-  if(up.error)return toast('Lỗi upload: '+up.error.message);
-  var r=await sb.from('course_sources').insert({course_id:courseId,kind:'file',title:f.name,storage_path:path,mime_type:f.type||null,size_bytes:f.size,created_by:ME.id});
+   toast('Đang xử lý tài liệu...');
+   var extracted=''; try{ extracted=await extractFileText(f); }catch(e){ extracted=''; }
+   var up=await sb.storage.from('course-sources').upload(path,f,{upsert:false});
+   if(up.error)return toast('Lỗi upload: '+up.error.message);
+   var r=await sb.from('course_sources').insert({course_id:courseId,kind:'file',title:f.name,storage_path:path,mime_type:f.type||null,size_bytes:f.size,extracted_text:extracted?extracted.slice(0,200000):null,created_by:ME.id});
   if(r.error)return toast('Lỗi lưu: '+r.error.message);
   toast('Đã tải lên'); openCourseEditor(courseId);
 }
@@ -618,6 +624,93 @@ async function delSource(sid,courseId){
   if(x&&x.kind==='file'&&x.storage_path){ await sb.storage.from('course-sources').remove([x.storage_path]); }
   await sb.from('course_sources').delete().eq('id',sid);
   openCourseEditor(courseId);
+}
+/* ---------- 2.4 AI CONTENT ENGINE ---------- */
+async function extractFileText(f){
+  var name=(f.name||'').toLowerCase(); var buf=await f.arrayBuffer();
+  if(name.endsWith('.pdf')){
+    if(!window.pdfjsLib) return '';
+    try{ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){}
+    var pdf=await pdfjsLib.getDocument({data:buf}).promise; var out=''; var n=Math.min(pdf.numPages,80);
+    for(var i=1;i<=n;i++){var pg=await pdf.getPage(i);var tc=await pg.getTextContent();out+=tc.items.map(function(t){return t.str;}).join(' ')+'\n';}
+    return out;
+  }
+  if(name.endsWith('.docx')){ if(!window.mammoth)return ''; var res=await mammoth.extractRawText({arrayBuffer:buf}); return res.value||''; }
+  if(name.endsWith('.xlsx')||name.endsWith('.xls')){ if(!window.XLSX)return ''; var wb=XLSX.read(buf,{type:'array'}); var out=''; wb.SheetNames.forEach(function(sn){out+='# '+sn+'\n'+XLSX.utils.sheet_to_csv(wb.Sheets[sn])+'\n';}); return out; }
+  if(name.endsWith('.pptx')){ if(!window.JSZip)return ''; var zip=await JSZip.loadAsync(buf); var out=''; var keys=Object.keys(zip.files).filter(function(k){return /ppt\/slides\/slide\d+\.xml$/.test(k);}).sort(); for(var k=0;k<keys.length;k++){var xml=await zip.files[keys[k]].async('string');var ts=xml.match(/<a:t>([\s\S]*?)<\/a:t>/g)||[];out+=ts.map(function(t){return t.replace(/<[^>]+>/g,'');}).join(' ')+'\n';} return out; }
+  if(name.endsWith('.txt')||name.endsWith('.md')||name.endsWith('.csv')){ return new TextDecoder().decode(buf); }
+  return '';
+}
+var AI_STRUCT=[];
+async function aiAnalyze(courseId){
+  var btn=document.getElementById('ceAiBtn'); if(btn){btn.disabled=true;btn.textContent='🤖 Đang phân tích...';}
+  var struct=document.getElementById('ceStruct'); if(struct)struct.innerHTML='<div style="color:#7a869a">AI đang đọc tài liệu và đề xuất cấu trúc, chờ chút...</div>';
+  var r=await sb.functions.invoke('super-service',{body:{action:'structure',course_id:courseId}});
+  if(btn){btn.disabled=false;btn.textContent='🤖 AI Phân tích tài liệu';}
+  var err=r.error||(r.data&&r.data.error);
+  if(err){if(struct)struct.innerHTML='<span style="color:#b00">Lỗi: '+esc(err.message||err)+'</span>';return;}
+  AI_STRUCT=((r.data&&r.data.lessons)||[]).map(function(x){return {title:x.title||'',objective:x.objective||''};});
+  renderStructureReview(courseId);
+}
+function renderStructureReview(courseId){
+  var struct=document.getElementById('ceStruct'); if(!struct)return;
+  if(!AI_STRUCT.length){struct.innerHTML='<div class="empty">AI chưa đề xuất được. Thử thêm tài liệu/mục tiêu rồi phân tích lại.</div>';return;}
+  var rows=AI_STRUCT.map(function(l,i){
+    return '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px">'
+     +'<div style="display:flex;gap:6px;align-items:center"><b>'+(i+1)+'.</b><input class="input" style="flex:1" value="'+esc(l.title)+'" onchange="AI_STRUCT['+i+'].title=this.value"/>'
+     +'<button class="btn btn-danger btn-sm" onclick="AI_STRUCT.splice('+i+',1);renderStructureReview(\''+courseId+'\')">🗑</button></div>'
+     +'<textarea class="input" style="margin-top:4px;width:100%;min-height:44px" onchange="AI_STRUCT['+i+'].objective=this.value" placeholder="Mục tiêu bài học">'+esc(l.objective)+'</textarea></div>';
+  }).join('');
+  struct.innerHTML='<div style="background:#fff8e6;border:1px solid #f0d98a;padding:8px;border-radius:8px;margin-bottom:8px">✍️ AI đề xuất '+AI_STRUCT.length+' bài. Chỉnh sửa/xóa/thêm rồi bấm <b>Tạo lesson</b>. (Chưa publish gì cả.)</div>'
+   +rows
+   +'<div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-ghost btn-sm" onclick="AI_STRUCT.push({title:\'Bài mới\',objective:\'\'});renderStructureReview(\''+courseId+'\')">＋ Thêm bài</button>'
+   +'<button class="btn btn-gold btn-sm" onclick="acceptStructure(\''+courseId+'\')">✓ Tạo lesson từ cấu trúc này</button></div>';
+}
+async function acceptStructure(courseId){
+  if(!AI_STRUCT.length)return toast('Chưa có bài nào');
+  var ex=await sb.from('course_lessons').select('order_index').eq('course_id',courseId).order('order_index',{ascending:false}).limit(1);
+  var base=(ex.data&&ex.data[0]&&ex.data[0].order_index)?ex.data[0].order_index:0;
+  var rows=AI_STRUCT.map(function(l,i){return {course_id:courseId,title:l.title||('Bài '+(i+1)),objective:l.objective||null,order_index:base+i+1,status:'ai_generated',created_by:ME.id};});
+  var r=await sb.from('course_lessons').insert(rows);
+  if(r.error)return toast('Lỗi tạo lesson: '+r.error.message);
+  AI_STRUCT=[]; toast('Đã tạo '+rows.length+' bài học'); openCourseEditor(courseId);
+}
+async function renderCourseLessons(courseId){
+  var box=document.getElementById('ceLessons'); if(!box)return;
+  var c=COURSES.find(function(x){return x.id===courseId;}); var own=c&&(c.owner_id===ME.id||ROLE==='admin');
+  var r=await sb.from('course_lessons').select('*').eq('course_id',courseId).order('order_index'); var ls=r.data||[];
+  var addBtn=own?'<button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addLessonManual(\''+courseId+'\')">＋ Thêm bài thủ công</button>':'';
+  if(!ls.length){box.innerHTML='<div class="empty">Chưa có bài học. Dùng 🤖 AI Phân tích để đề xuất, hoặc thêm thủ công.</div>'+addBtn;return;}
+  box.innerHTML=ls.map(function(l,i){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)">'
+     +'<span><b>'+(i+1)+'.</b> '+esc(l.title)+' <span class="pill" style="background:#64748b;color:#fff;font-size:11px">'+esc(l.status)+'</span>'+(l.objective?'<div style="color:#7a869a;font-size:12px">'+esc(l.objective)+'</div>':'')+'</span>'
+     +(own?'<span style="display:flex;gap:4px;white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="moveLesson('+i+',-1,\''+courseId+'\')">↑</button><button class="btn btn-ghost btn-sm" onclick="moveLesson('+i+',1,\''+courseId+'\')">↓</button><button class="btn btn-ghost btn-sm" onclick="editLesson(\''+l.id+'\',\''+courseId+'\')">✏️</button><button class="btn btn-danger btn-sm" onclick="delLesson(\''+l.id+'\',\''+courseId+'\')">🗑</button></span>':'')
+     +'</div>';
+  }).join('')+addBtn;
+}
+async function addLessonManual(courseId){
+  var t=prompt('Tên bài học mới:'); if(!t)return;
+  var ex=await sb.from('course_lessons').select('order_index').eq('course_id',courseId).order('order_index',{ascending:false}).limit(1);
+  var base=(ex.data&&ex.data[0]&&ex.data[0].order_index)?ex.data[0].order_index:0;
+  var r=await sb.from('course_lessons').insert({course_id:courseId,title:t,order_index:base+1,status:'draft',created_by:ME.id});
+  if(r.error)return toast('Lỗi: '+r.error.message);
+  renderCourseLessons(courseId);
+}
+async function editLesson(id,courseId){
+  var r=await sb.from('course_lessons').select('*').eq('id',id).single(); var l=r.data; if(!l)return;
+  var t=prompt('Tên bài học:',l.title); if(t===null)return;
+  var o=prompt('Mục tiêu:',l.objective||'');
+  var u=await sb.from('course_lessons').update({title:t||l.title,objective:o||null,updated_at:new Date().toISOString()}).eq('id',id);
+  if(u.error)return toast('Lỗi: '+u.error.message);
+  renderCourseLessons(courseId);
+}
+async function delLesson(id,courseId){ if(!confirm('Xóa bài học này?'))return; await sb.from('course_lessons').delete().eq('id',id); renderCourseLessons(courseId); }
+async function moveLesson(idx,dir,courseId){
+  var r=await sb.from('course_lessons').select('id,order_index').eq('course_id',courseId).order('order_index'); var ls=r.data||[];
+  var j=idx+dir; if(j<0||j>=ls.length)return; var a=ls[idx], b=ls[j];
+  await sb.from('course_lessons').update({order_index:b.order_index}).eq('id',a.id);
+  await sb.from('course_lessons').update({order_index:a.order_index}).eq('id',b.id);
+  renderCourseLessons(courseId);
 }
 /* ---------- LOAD ---------- */
 async function loadAll(){
