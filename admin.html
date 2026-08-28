@@ -310,7 +310,7 @@ tr:hover td{background:#fafbff}
     <section id="v-admin" class="hidden">
       <div class="head"><h2>⚙️ Quản trị</h2></div>
       <div class="card"><b>📩 Yêu cầu xin quyền xem khóa</b><div id="reqList" style="margin-top:10px"></div></div>
-      <div class="card" style="margin-top:14px"><b>👤 Người dùng &amp; phân quyền</b><div id="userList" style="margin-top:10px"></div></div>
+      <div class="card" style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>👤 Người dùng &amp; phân quyền</b><button class="btn btn-gold btn-sm" onclick="openAddUser()">＋ Thêm người dùng</button></div><div id="userList" style="margin-top:10px"></div></div>
     </section>
   </main>
 </div>
@@ -357,6 +357,7 @@ async function afterLogin(){
   if(!user)return;
   const {data:prof,error}=await sb.from('profiles').select('*, organizations(*)').eq('id',user.id).single();
   if(error||!prof){document.getElementById('liErr').textContent='Tài khoản chưa gắn tổ chức (profiles). Xem hướng dẫn bước D.';document.getElementById('liErr').style.display='block';await sb.auth.signOut();return;}
+   if(prof.status==='inactive'){document.getElementById('liErr').textContent='Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Admin.';document.getElementById('liErr').style.display='block';await sb.auth.signOut();return;}
    ME=prof; ORG=prof.organizations||{id:prof.org_id}; ROLE=prof.role||'admin';
    document.getElementById('meName').textContent=(prof.full_name||user.email)+' · '+(ROLE_LABEL[ROLE]||ROLE);
    applyRole();
@@ -406,15 +407,68 @@ async function renderAdmin(){
       +'<button class="btn btn-danger btn-sm" onclick="decideAccess(\''+a.course_id+'\',\''+a.trainer_id+'\',\'rejected\')">✖ Từ chối</button>'
       +'</span></div>';
   }).join('') : '<div class="empty">Không có yêu cầu chờ duyệt.</div>';
+
   var roles=['admin','trainer','manager','learner'];
-  document.getElementById('userList').innerHTML = PROFILES.length ? PROFILES.map(function(p){
+  var badge=function(st){var m={active:['#0b6b3a','Active'],invited:['#8a6d00','Invited'],inactive:['#7a1f1f','Inactive']};var x=m[st]||m.active;return '<span class="pill" style="background:'+x[0]+';color:#fff">'+x[1]+'</span>';};
+  document.getElementById('userList').innerHTML = (PROFILES&&PROFILES.length) ? PROFILES.map(function(p){
     var opts=roles.map(function(r){return '<option value="'+r+'" '+(p.role===r?'selected':'')+'>'+(ROLE_LABEL[r]||r)+'</option>';}).join('');
-    var self=p.id===ME.id?' <span class="pill">bạn</span>':'';
-    return '<div style="padding:8px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px">'
-      +'<span>'+esc(p.full_name||p.id.slice(0,8))+self+'</span>'
-      +'<select onchange="setUserRole(\''+p.id+'\',this.value)" '+(p.id===ME.id?'disabled title="Không thể tự đổi vai trò của mình"':'')+'>'+opts+'</select>'
-      +'</div>';
-  }).join('') : '<div class="empty">Chưa có người dùng khác. Tạo tài khoản trong Supabase → Authentication rồi gán vai trò tại đây.</div>';
+    var self=p.id===ME.id;
+    var actions = self ? '' :
+      '<button class="btn btn-ghost btn-sm" onclick="resetUserPassword(\''+p.id+'\')">🔑 Reset MK</button>'
+      + (p.status==='inactive'
+          ? '<button class="btn btn-gold btn-sm" onclick="setUserActive(\''+p.id+'\',true)">Mở khóa</button>'
+          : '<button class="btn btn-danger btn-sm" onclick="setUserActive(\''+p.id+'\',false)">Khóa</button>');
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'
+      +'<span style="min-width:200px">'+esc(p.full_name||p.id.slice(0,8))+(self?' <span class="pill">bạn</span>':'')+' '+badge(p.status||'active')
+        +(p.phone?' <span style="color:#7a869a;font-size:12px">· '+esc(p.phone)+'</span>':'')+'</span>'
+      +'<span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+      +'<select onchange="setUserRole(\''+p.id+'\',this.value)" '+(self?'disabled title="Không thể tự đổi vai trò của mình"':'')+'>'+opts+'</select>'
+      +actions+'</span></div>';
+  }).join('') : '<div class="empty">Chưa có người dùng.</div>';
+}
+
+/* ---------- 2.1 Quản lý tài khoản (qua Edge Function admin-users) ---------- */
+function openAddUser(){
+  var deptOpts='<option value="">— Không —</option>'+DEPTS.map(function(d){return '<option value="'+d.id+'">'+esc(d.name)+'</option>';}).join('');
+  modal('<button class="x" onclick="closeModal()">×</button><h3>＋ Thêm người dùng</h3>'
+   +'<label class="fl">Họ tên *</label><input class="input" id="nuName"/>'
+   +'<label class="fl">Email *</label><input class="input" id="nuEmail" type="email" placeholder="nguoidung@email.com"/>'
+   +'<label class="fl">Số điện thoại</label><input class="input" id="nuPhone"/>'
+   +'<label class="fl">Vai trò *</label><select id="nuRole"><option value="trainer">Trainer</option><option value="manager">Manager</option><option value="learner">Học viên (Learner)</option><option value="admin">Admin</option></select>'
+   +'<label class="fl">Đơn vị/Khoa</label><select id="nuDept">'+deptOpts+'</select>'
+   +'<div id="nuMsg" style="margin-top:10px"></div>'
+   +'<button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:14px" id="nuBtn" onclick="submitAddUser()">Tạo tài khoản</button>');
+}
+async function submitAddUser(){
+  var name=document.getElementById('nuName').value.trim();
+  var email=document.getElementById('nuEmail').value.trim();
+  var phone=document.getElementById('nuPhone').value.trim();
+  var role=document.getElementById('nuRole').value;
+  var dept=document.getElementById('nuDept').value||null;
+  var msg=document.getElementById('nuMsg');
+  if(!name||!email){msg.innerHTML='<span style="color:#b00">Vui lòng nhập Họ tên và Email.</span>';return;}
+  var btn=document.getElementById('nuBtn');btn.disabled=true;btn.textContent='Đang tạo...';
+  var r=await sb.functions.invoke('admin-users',{body:{action:'create',full_name:name,email:email,phone:phone,role:role,department_id:dept}});
+  btn.disabled=false;btn.textContent='Tạo tài khoản';
+  var err=r.error||(r.data&&r.data.error);
+  if(err){msg.innerHTML='<span style="color:#b00">Lỗi: '+esc(err.message||err)+'</span>';return;}
+  msg.innerHTML='<div style="background:#e9f7ef;border:1px solid #bfe6cd;padding:10px;border-radius:8px">✓ Đã tạo tài khoản <b>'+esc(email)+'</b>.<br>Mật khẩu tạm: <b style="font-size:16px">'+esc(r.data.tempPassword)+'</b><br><span style="color:#7a869a;font-size:12px">Gửi email + mật khẩu này cho người dùng để đăng nhập, sau đó họ tự đổi mật khẩu.</span></div>';
+  await loadAll(); renderAdmin();
+}
+async function resetUserPassword(uid){
+  if(!confirm('Cấp lại mật khẩu mới cho người dùng này?'))return;
+  var r=await sb.functions.invoke('admin-users',{body:{action:'reset_password',user_id:uid}});
+  var err=r.error||(r.data&&r.data.error);
+  if(err)return toast('Lỗi: '+(err.message||err));
+  await loadAll(); renderAdmin();
+  modal('<button class="x" onclick="closeModal()">×</button><h3>Mật khẩu mới</h3><p>Mật khẩu tạm mới:</p><p style="font-size:18px"><b>'+esc(r.data.tempPassword)+'</b></p><p style="color:#7a869a;font-size:12px">Gửi cho người dùng để đăng nhập lại.</p>');
+}
+async function setUserActive(uid,active){
+  if(!confirm(active?'Mở khóa tài khoản này?':'Khóa (vô hiệu hóa) tài khoản này? Người dùng sẽ không đăng nhập được.'))return;
+  var r=await sb.functions.invoke('admin-users',{body:{action:'set_active',user_id:uid,active:active}});
+  var err=r.error||(r.data&&r.data.error);
+  if(err)return toast('Lỗi: '+(err.message||err));
+  await loadAll(); renderAdmin(); toast(active?'Đã mở khóa':'Đã khóa tài khoản');
 }
 
 
