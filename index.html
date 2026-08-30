@@ -287,6 +287,7 @@ hr.sep{border:0;border-top:1px solid var(--line2);margin:18px 0}
       <div class="big-ico">✓</div>
       <div class="h1" style="margin:20px 0 6px" data-i18n="doneT">Bạn đã hoàn thành</div>
       <div class="lead" id="confirmCount">— / — câu đã trả lời</div>
+      <div id="confirmUnanswered" style="display:none;margin:10px auto 0;max-width:520px;background:#fef3f2;border:1px solid #fca5a5;color:#b42318;border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600"></div>
       <div class="card" style="text-align:left;margin-top:22px" id="confirmWarnCard">
         <div style="font-size:14px;color:var(--ink)"><b data-i18n="confirmQ">Bạn có chắc chắn muốn nộp bài đánh giá?</b></div>
         <div class="cap" style="margin-top:6px" data-i18n="confirmS">Sau khi nộp, bạn sẽ không thể thay đổi câu trả lời.</div>
@@ -515,6 +516,9 @@ function prevQ(){if(cur>0){cur--;renderQ();}}
 function goConfirm(){
   const answered=QS.filter(q=>ans[q.id]).length;
   document.getElementById('confirmCount').textContent=answered+' / '+QS.length+(lang==='vi'?' câu đã trả lời':' answered');
+  const miss=QS.length-answered;const uw=document.getElementById('confirmUnanswered');
+  if(miss>0){uw.style.display='block';uw.textContent=(lang==='vi'?('⚠ Còn '+miss+' câu chưa trả lời — các câu này sẽ bị tính là sai.'):('⚠ '+miss+' question(s) not answered — these will be marked incorrect.'));}
+  else{uw.style.display='none';}
   go('confirm');
 }
 async function doSubmit(auto){
@@ -588,6 +592,7 @@ function renderReview(f){
   if(!items.length){list.innerHTML='<div class="foot">—</div>';return;}
   list.innerHTML=items.map(({it,idx})=>{
     const ok=it.is_correct;
+    const answered=(it.options||[]).some(o=>o.selected);
     const opts=(it.options||[]).map((o,i)=>{let c='ropt',tail='';
       if(o.is_correct){c+=' correct';tail=o.selected?(lang==='vi'?' · Bạn chọn ✓':' · Your choice ✓'):'';}
       else if(o.selected){c+=' wrong';tail=lang==='vi'?' · Bạn chọn':' · Your choice';}
@@ -596,9 +601,9 @@ function renderReview(f){
     const insight=it.explanation?`<div class="insight"><b>${lang==='vi'?'PHÂN TÍCH':'INSIGHT'}</b><br>${esc(it.explanation)}</div>`:'';
     return `<div class="rev" id="rev${idx}"><div class="hd" onclick="document.getElementById('rev${idx}').classList.toggle('open')">
       <div style="min-width:0;flex:1"><div class="qn">${lang==='vi'?'CÂU':'Q'} ${String(idx+1).padStart(2,'0')}</div><div class="qt2">${esc((it.question_text||'').slice(0,80))}${(it.question_text||'').length>80?'…':''}</div></div>
-      <div class="st ${ok?'ok':'no'}">${ok?(lang==='vi'?'✓ Chính xác':'✓ Correct'):(lang==='vi'?'✕ Chưa đúng':'✕ Incorrect')}</div>
+      <div class="st ${ok?'ok':'no'}">${ok?(lang==='vi'?'✓ Chính xác':'✓ Correct'):(!answered?(lang==='vi'?'⚠ Chưa trả lời':'⚠ Not answered'):(lang==='vi'?'✕ Chưa đúng':'✕ Incorrect'))}</div>
       <div class="arw">▾</div></div>
-      <div class="bd"><div style="font-weight:600;margin:12px 0 4px">${esc(it.question_text)}</div>${opts}${topic}${insight}</div></div>`;
+      <div class="bd"><div style="font-weight:600;margin:12px 0 4px">${esc(it.question_text)}</div>${answered?'':'<div style="background:#fef3f2;border:1px solid #fca5a5;color:#b42318;border-radius:8px;padding:9px 11px;margin:6px 0;font-size:13px;font-weight:600">'+(lang==='vi'?'⚠ Bạn chưa chọn đáp án nào cho câu này':'⚠ You did not select any answer for this question')+'</div>'}${opts}${topic}${insight}</div></div>`;
   }).join('');
 }
 boot();
