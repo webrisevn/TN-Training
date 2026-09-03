@@ -729,15 +729,36 @@ async function moveLesson(idx,dir,courseId){
   renderCourseLessons(courseId);
 }
 /* ---------- 2.5/2.6 LESSON CONTENT (interactive blocks) ---------- */
-var BLOCK_META=[['objective','🎯','Mục tiêu'],['concept','📘','Khái niệm'],['visual','🖼️','Hình ảnh/Sơ đồ'],['example','💡','Ví dụ'],['case','📄','Case study'],['discussion','💬','Thảo luận'],['interactive_question','❓','Câu hỏi tương tác'],['practice','✍️','Thực hành'],['summary','🧾','Tóm tắt'],['assessment','✅','Đánh giá']];
+var BLOCK_META=[['hook','🎣','Mở đầu'],['objective','🎯','Mục tiêu'],['concept','📘','Khái niệm'],['visual','🖼️','Hình ảnh/Sơ đồ'],['visual_diagram','🗺️','Sơ đồ nhóm'],['visual_matrix','📊','Bảng so sánh'],['visual_steps','🪜','Các bước'],['example','💡','Ví dụ'],['case','📄','Tình huống'],['discussion','💬','Thảo luận'],['interactive_question','❓','Câu hỏi tương tác'],['practice','✍️','Thực hành'],['reflection','💭','Nhìn lại'],['action_plan','🚀','Kế hoạch hành động'],['summary','🧾','Tóm tắt'],['assessment','✅','Đánh giá']];
 function blockMeta(t){for(var i=0;i<BLOCK_META.length;i++)if(BLOCK_META[i][0]===t)return BLOCK_META[i];return [t,'▫️',t];}
-function isQuestionType(t){return t==='interactive_question'||t==='assessment';}
+function isQuestionType(t){return t==='interactive_question'||t==='assessment'||t==='hook';}
+function isJsonType(t){return ['objective','visual_diagram','visual_matrix','visual_steps','practice','reflection','action_plan'].indexOf(t)>=0;}
+var LEVEL_VI={basic:'Cơ bản',advanced:'Nâng cao',expert:'Chuyên gia',apply:'Vận dụng'};
+function levelName(l){return LEVEL_VI[l]||'';}
+function jsonDefault(t){
+  if(t==='objective')return{items:['']};
+  if(t==='visual_diagram')return{intro:'',groups:[{label:'',items:[''],caption:''}]};
+  if(t==='visual_matrix')return{intro:'',columns:[''],rows:[{label:'',cells:['']}]};
+  if(t==='visual_steps')return{intro:'',steps:[{label:'',desc:''}]};
+  if(t==='practice')return{task:'',hint:'',rubric:[''],model:''};
+  if(t==='reflection')return{prompts:['1 điều bạn học được','1 điều cần cải thiện','1 việc áp dụng ngay']};
+  if(t==='action_plan')return{text:''};
+  return{text:''};
+}
 function renderBlockBody(b){
   var t=b.block_type, body=b.body||{};
   if(isQuestionType(t)){
+    var lv=body.level?'<span class="pill" style="background:#e8f0ff;color:#012463;font-size:11px">Cấp: '+esc(levelName(body.level))+'</span> ':'';
     var opts=(body.options||[]).map(function(o){return '<div>'+(o.correct?'✅':'⬜')+' '+esc(o.text||'')+'</div>';}).join('');
-    return '<div><b>'+esc(body.question||'(chưa có câu hỏi)')+'</b>'+opts+(body.explanation?'<div style="color:#7a869a;font-size:12px;margin-top:4px">Giải thích: '+esc(body.explanation)+'</div>':'')+'</div>';
+    return '<div>'+lv+'<b>'+esc(body.question||'(chưa có câu hỏi)')+'</b>'+opts+(body.explanation?'<div style="color:#7a869a;font-size:12px;margin-top:4px">Giải thích: '+esc(body.explanation)+'</div>':'')+'</div>';
   }
+  if(t==='objective'){var it=body.items||(body.text?[body.text]:[]);return '<ul style="margin:4px 0 0;padding-left:18px">'+it.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>';}
+  if(t==='visual_diagram'){var g=body.groups||[];return '<div style="color:#7a869a;font-size:12px">'+esc(body.intro||'')+'</div>'+g.map(function(x){return '<div style="margin-top:3px"><b>'+esc(x.label||'')+':</b> '+esc((x.items||[]).join(', '))+(x.caption?' — '+esc(x.caption):'')+'</div>';}).join('');}
+  if(t==='visual_matrix'){var cols=body.columns||[],rows=body.rows||[];return '<div style="overflow:auto"><table style="border-collapse:collapse;font-size:12px"><tr>'+['',].concat(cols).map(function(c){return '<th style="border:1px solid #ddd;padding:3px 6px;background:#eef2f7">'+esc(c)+'</th>';}).join('')+'</tr>'+rows.map(function(r){return '<tr><td style="border:1px solid #ddd;padding:3px 6px;font-weight:600">'+esc(r.label||'')+'</td>'+(r.cells||[]).map(function(c){return '<td style="border:1px solid #ddd;padding:3px 6px;text-align:center">'+esc(c)+'</td>';}).join('')+'</tr>';}).join('')+'</table></div>';}
+  if(t==='visual_steps'){var st=body.steps||[];return '<ol style="margin:4px 0 0;padding-left:18px">'+st.map(function(x){return '<li><b>'+esc(x.label||'')+'</b>'+(x.desc?' — '+esc(x.desc):'')+'</li>';}).join('')+'</ol>';}
+  if(t==='practice'){return '<div><b>'+esc(body.task||body.text||'')+'</b>'+(body.rubric&&body.rubric.length?'<div style="color:#7a869a;font-size:12px;margin-top:3px">Tiêu chí: '+esc(body.rubric.join(' · '))+'</div>':'')+'</div>';}
+  if(t==='reflection'){return '<div style="color:#7a869a;font-size:12px">'+esc((body.prompts||['1 điều học được','1 điều cần cải thiện','1 việc áp dụng ngay']).join(' · '))+'</div>';}
+  if(t==='summary'){var pts=body.points||(body.text?[body.text]:[]);return '<ul style="margin:4px 0 0;padding-left:18px">'+pts.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>';}
   return '<div style="white-space:pre-wrap">'+esc(body.text||'')+'</div>';
 }
 async function openLessonEditor(lessonId,courseId){
@@ -797,7 +818,7 @@ function addBlock(lessonId,courseId){
 async function insertBlock(type,lessonId,courseId){
   var ex=await sb.from('lesson_blocks').select('order_index').eq('lesson_id',lessonId).order('order_index',{ascending:false}).limit(1);
   var base=(ex.data&&ex.data[0]&&ex.data[0].order_index)?ex.data[0].order_index:0;
-  var body=isQuestionType(type)?{question:'',options:[],explanation:''}:{text:''};
+  var body=isQuestionType(type)?{question:'',level:(type==='interactive_question'?'basic':''),options:[],explanation:''}:(isJsonType(type)?jsonDefault(type):{text:''});
   var r=await sb.from('lesson_blocks').insert({lesson_id:lessonId,order_index:base+1,block_type:type,title:'',body:body}).select().single();
   if(r.error)return toast('Lỗi: '+r.error.message);
   editBlock(r.data.id,lessonId,courseId);
@@ -807,9 +828,13 @@ async function editBlock(blockId,lessonId,courseId){
   var body=b.body||{}; var mt=blockMeta(b.block_type); var fields;
   if(isQuestionType(b.block_type)){
     var optLines=(body.options||[]).map(function(o){return (o.correct?'* ':'')+(o.text||'');}).join('\n');
+    var lvSel=(b.block_type==='interactive_question')?'<label class="fl">Cấp độ</label><select class="input" id="bkLevel"><option value="basic"'+(body.level==='basic'?' selected':'')+'>Cơ bản</option><option value="advanced"'+(body.level==='advanced'?' selected':'')+'>Nâng cao</option><option value="expert"'+(body.level==='expert'?' selected':'')+'>Chuyên gia</option></select>':'';
     fields='<label class="fl">Câu hỏi</label><textarea class="input" id="bkQ" style="min-height:50px">'+esc(body.question||'')+'</textarea>'
+      +lvSel
       +'<label class="fl">Phương án (mỗi dòng 1 phương án; thêm dấu * đầu dòng cho đáp án ĐÚNG)</label><textarea class="input" id="bkOpts" style="min-height:90px">'+esc(optLines)+'</textarea>'
       +'<label class="fl">Giải thích</label><textarea class="input" id="bkExp" style="min-height:44px">'+esc(body.explanation||'')+'</textarea>';
+  } else if(isJsonType(b.block_type)){
+    fields='<label class="fl">Nội dung (dạng JSON — chỉnh nâng cao, giữ đúng cấu trúc)</label><textarea class="input" id="bkJson" style="min-height:170px;font-family:monospace;font-size:12px">'+esc(JSON.stringify(body,null,2))+'</textarea>';
   } else {
     fields='<label class="fl">Nội dung</label><textarea class="input" id="bkText" style="min-height:120px">'+esc(body.text||'')+'</textarea>';
   }
@@ -824,6 +849,9 @@ async function submitBlockEdit(blockId,blockType,lessonId,courseId){
     var q=document.getElementById('bkQ').value;
     var opts=document.getElementById('bkOpts').value.split('\n').map(function(x){return x.trim();}).filter(Boolean).map(function(x){var cor=/^\*/.test(x);return {text:x.replace(/^\*\s*/,''),correct:cor};});
     body={question:q,options:opts,explanation:document.getElementById('bkExp').value};
+    var lvEl=document.getElementById('bkLevel'); if(lvEl)body.level=lvEl.value;
+  } else if(isJsonType(blockType)){
+    try{ body=JSON.parse(document.getElementById('bkJson').value); }catch(e){ return toast('JSON không hợp lệ: '+e.message); }
   } else { body={text:document.getElementById('bkText').value}; }
   var r=await sb.from('lesson_blocks').update({title:title,body:body}).eq('id',blockId);
   if(r.error)return toast('Lỗi: '+r.error.message);
@@ -898,7 +926,18 @@ function lpEnsureStyle(){
    +'.lp-note{width:100%;min-height:90px;border:2px solid #e5e9f0;border-radius:12px;padding:12px;font-size:15px;font-family:inherit;margin-top:10px}'
    +'.lp-visual{border:2px dashed #c9b06b;background:#fffbf0;border-radius:14px;padding:22px;text-align:center;color:#7a6a2e}'
    +'.lp-visual img{max-width:100%;border-radius:10px}'
-   +'@media(max-width:600px){.lp-card{padding:18px}.lp-h{font-size:19px}.lp-txt{font-size:15px}}';
+   +'.lp-tags{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}'
+   +'.lp-lvl{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:800;padding:5px 11px;border-radius:999px}'
+   +'.lp-lvl.l1{background:#e9f7ef;color:#0b6b3a}.lp-lvl.l2{background:#fff3d6;color:#8a5a00}.lp-lvl.l3{background:#fdecec;color:#a12318}.lp-lvl.lv{background:#e8f0ff;color:#012463}'
+   +'.lp-obj{display:flex;gap:12px;padding:11px 0;border-top:1px solid #eef2f7}.lp-obj:first-child{border-top:none}.lp-obj .n{flex-shrink:0;width:28px;height:28px;border-radius:8px;background:#012463;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center}'
+   +'.lp-jrn{border:1px solid #e5e9f0;border-radius:14px;padding:14px 10px;background:linear-gradient(180deg,#fbfcff,#f3f6fc)}'
+   +'.lp-grp{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:6px}'
+   +'.lp-gcol{border-radius:12px;padding:11px 9px;color:#fff;min-height:96px}.lp-gcol h4{margin:0 0 6px;font-size:14px;font-weight:800}.lp-gcol span{display:inline-block;background:rgba(255,255,255,.22);border-radius:6px;padding:3px 7px;font-size:12px;font-weight:700;margin:2px 3px 0}.lp-gcol small{display:block;margin-top:7px;font-size:11px;opacity:.94;line-height:1.35}'
+   +'.lp-mx{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;border:1px solid #e5e9f0;border-radius:10px;overflow:hidden}.lp-mx th,.lp-mx td{padding:9px 8px;text-align:center;border-bottom:1px solid #eef2f7}.lp-mx th{background:#012463;color:#fff;font-size:12px}.lp-mx td:first-child,.lp-mx th:first-child{text-align:left;font-weight:700;color:#012463}'
+   +'.lp-step{display:flex;gap:12px;padding:9px 0;border-top:1px solid #eef2f7}.lp-step:first-child{border-top:none}.lp-step .n{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:#F2B84B;color:#012463;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:13px}'
+   +'.lp-rub{margin-top:12px;background:#f4f7fc;border-radius:12px;padding:12px 14px;font-size:14px;color:#31405f;display:none}.lp-rub.show{display:block}.lp-rub ul{margin:6px 0 0;padding-left:18px}.lp-rub li{margin:4px 0}'
+   +'.lp-model{margin-top:8px;padding:10px 12px;background:#e9f7ef;border-radius:10px;color:#0b6b3a;font-size:14px;line-height:1.55}'
+   +'@media(max-width:600px){.lp-card{padding:18px}.lp-h{font-size:19px}.lp-txt{font-size:15px}.lp-gcol{min-height:112px}}';
   document.head.appendChild(s);
 }
 async function openLearnLesson(lessonId,courseId){
@@ -906,7 +945,8 @@ async function openLearnLesson(lessonId,courseId){
   var br=await sb.from('lesson_blocks').select('*').eq('lesson_id',lessonId).order('order_index'); var bs=br.data||[];
   try{ await sb.from('learning_progress').upsert({user_id:ME.id,course_id:courseId,lesson_id:lessonId,status:'in_progress',updated_at:new Date().toISOString()},{onConflict:'user_id,lesson_id'}); }catch(e){}
   lpEnsureStyle();
-  LP={lesson:l,courseId:courseId,blocks:bs,i:0,ans:{},notes:{}};
+  var seq=bs.slice(); if(seq.length){seq.push({block_type:'reflection',body:{},_synthetic:true}); seq.push({block_type:'action_plan',body:{},_synthetic:true});}
+  LP={lesson:l,courseId:courseId,blocks:seq,i:0,ans:{},notes:{}};
   var ov=document.getElementById('lpOverlay'); if(ov)ov.remove();
   var d=document.createElement('div'); d.id='lpOverlay'; d.className='lp-ov';
   d.innerHTML='<div class="lp-top"><div class="lp-ttl">'+esc(l.title)+'</div>'
@@ -934,43 +974,44 @@ function lpRender(){
   prev.disabled=(LP.i===0);
   next.textContent=(LP.i===total-1)?'Kết thúc ▶':'Tiếp ▶';
 }
+function lpLevelClass(l){return {basic:'l1',advanced:'l2',expert:'l3',apply:'lv'}[l]||'lv';}
+var LP_PAL=['#0b6b3a','#1668a8','#8a6d10','#a53125','#5b3fa5','#0f6f74'];
 function lpBlockHTML(b,idx){
-  var mt=blockMeta(b.block_type); var body=b.body||{};
-  var kind='<span class="lp-kind">'+mt[1]+' '+mt[2]+'</span>';
+  var t=b.block_type, mt=blockMeta(t), body=b.body||{};
+  var tags='<span class="lp-kind">'+mt[1]+' '+mt[2]+'</span>';
+  if(t==='interactive_question'&&body.level)tags+='<span class="lp-lvl '+lpLevelClass(body.level)+'">📈 '+esc(levelName(body.level))+'</span>';
+  var head='<div class="lp-tags">'+tags+'</div>';
   var ttl=b.title?'<h2 class="lp-h">'+esc(b.title)+'</h2>':'';
-  // Câu hỏi tương tác
-  if(isQuestionType(b.block_type)){
+  if(isQuestionType(t)){
     var st=LP.ans[idx]; var options=body.options||[];
-    var opts=options.map(function(o,i){
-      var cls='lp-opt',dis='';
-      if(st){dis=' disabled';
-        if(o.correct)cls+=' ok';
-        else if(st.chosen===i)cls+=' bad';
-      }
-      return '<button class="'+cls+'"'+dis+' onclick="lpAnswer('+idx+','+i+')">'+String.fromCharCode(65+i)+'. '+esc(o.text||'')+'</button>';
-    }).join('');
+    var opts=options.map(function(o,i){var cls='lp-opt',dis='';if(st){dis=' disabled';if(o.correct)cls+=' ok';else if(st.chosen===i)cls+=' bad';}return '<button class="'+cls+'"'+dis+' onclick="lpAnswer('+idx+','+i+')">'+String.fromCharCode(65+i)+'. '+esc(o.text||'')+'</button>';}).join('');
     var fb='';
-    if(st){
-      var exp=body.explanation?'<br>💡 '+esc(body.explanation):'';
-      fb=st.correct?'<div class="lp-fb ok"><b>✓ Chính xác!</b>'+exp+'</div>'
-                   :'<div class="lp-fb bad"><b>✕ Chưa đúng.</b> Đáp án đúng đã được tô xanh.'+exp+'</div>';
-    }
-    return kind+'<h2 class="lp-h">'+esc(body.question||b.title||'Câu hỏi')+'</h2>'+opts+fb;
+    if(st){var exp=body.explanation?'<br>💡 '+esc(body.explanation):'';fb=st.correct?'<div class="lp-fb ok"><b>✓ Chính xác!</b>'+exp+'</div>':'<div class="lp-fb bad"><b>✕ Chưa đúng.</b> Đáp án đúng đã được tô xanh.'+exp+'</div>';}
+    return head+'<h2 class="lp-h">'+esc(body.question||b.title||'Câu hỏi')+'</h2>'+opts+fb;
   }
-  // Hình ảnh/Sơ đồ
-  if(b.block_type==='visual'){
-    var img=body.image_url?'<img src="'+esc(body.image_url)+'" alt="minh họa">':'<div style="font-size:40px">🖼️</div>';
-    return kind+ttl+'<div class="lp-visual">'+img+'<div style="margin-top:10px;font-size:15px;line-height:1.6">'+esc(body.text||body.caption||'')+'</div></div>';
+  if(t==='objective'){var it=body.items||(body.text?[body.text]:[]);return head+'<h2 class="lp-h">'+(b.title?esc(b.title):'Học xong bài này, bạn sẽ…')+'</h2>'+it.map(function(x,i){return '<div class="lp-obj"><div class="n">'+(i+1)+'</div><div class="lp-txt" style="font-size:15px">'+esc(x)+'</div></div>';}).join('');}
+  if(t==='visual_diagram'){var g=body.groups||[];var cols='<div class="lp-grp">'+g.map(function(x,i){var c=LP_PAL[i%LP_PAL.length];return '<div class="lp-gcol" style="background:'+c+'"><h4>'+esc(x.label||'')+'</h4>'+(x.items||[]).map(function(it){return '<span>'+esc(it)+'</span>';}).join('')+(x.caption?'<small>'+esc(x.caption)+'</small>':'')+'</div>';}).join('')+'</div>';return head+ttl+(body.intro?'<div class="lp-txt" style="font-size:15px;margin-bottom:8px">'+esc(body.intro)+'</div>':'')+'<div class="lp-jrn">'+cols+'</div>';}
+  if(t==='visual_matrix'){var cs=body.columns||[],rows=body.rows||[];var thead='<tr><th></th>'+cs.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+'</tr>';var tb=rows.map(function(r){return '<tr><td>'+esc(r.label||'')+'</td>'+(r.cells||[]).map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';}).join('');return head+ttl+(body.intro?'<div class="lp-txt" style="font-size:15px;margin-bottom:8px">'+esc(body.intro)+'</div>':'')+'<div style="overflow:auto"><table class="lp-mx">'+thead+tb+'</table></div>';}
+  if(t==='visual_steps'){var sp=body.steps||[];return head+ttl+(body.intro?'<div class="lp-txt" style="font-size:15px;margin-bottom:8px">'+esc(body.intro)+'</div>':'')+sp.map(function(x,i){return '<div class="lp-step"><div class="n">'+(i+1)+'</div><div class="lp-txt" style="font-size:15px"><b>'+esc(x.label||'')+'</b>'+(x.desc?' — '+esc(x.desc):'')+'</div></div>';}).join('');}
+  if(t==='visual'){var img=body.image_url?'<img src="'+esc(body.image_url)+'" alt="minh họa">':'<div style="font-size:40px">🖼️</div>';return head+ttl+'<div class="lp-visual">'+img+'<div style="margin-top:10px;font-size:15px;line-height:1.6">'+esc(body.text||body.caption||'')+'</div></div>';}
+  if(t==='practice'){
+    var task=body.task||body.text||''; var val=LP.notes[idx]||'';
+    var rub=(body.rubric&&body.rubric.length)?'<div class="lp-rub" id="lpRub'+idx+'"><b>Tiêu chí chấm:</b><ul>'+body.rubric.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>'+(body.model?'<div class="lp-model"><b>Gợi ý bản tốt hơn:</b><br>'+esc(body.model)+'</div>':'')+'</div>':'';
+    var btn=(body.rubric&&body.rubric.length)?'<button class="lp-btn lp-next" style="margin-top:10px" onclick="document.getElementById(\'lpRub'+idx+'\').classList.add(\'show\')">✅ Xem nhận xét &amp; gợi ý</button>':'';
+    return head+'<h2 class="lp-h">'+(b.title?esc(b.title):'Thực hành')+'</h2><div class="lp-txt">'+esc(task)+'</div>'+(body.hint?'<div class="lp-txt" style="font-size:14px;color:#7a869a;margin-top:4px">'+esc(body.hint)+'</div>':'')+'<textarea class="lp-note" placeholder="Nhập bài làm của bạn…" oninput="LP.notes['+idx+']=this.value">'+esc(val)+'</textarea>'+btn+rub;
   }
-  // Thảo luận / thực hành: có ô ghi chú của học viên (lưu tạm trong buổi học)
-  if(b.block_type==='discussion'||b.block_type==='practice'){
-    var val=LP.notes[idx]||'';
-    var ph=b.block_type==='discussion'?'Ghi lại suy nghĩ của bạn…':'Ghi lời giải / ghi chú thực hành…';
-    return kind+ttl+'<div class="lp-txt">'+esc(body.text||'')+'</div>'
-      +'<textarea class="lp-note" placeholder="'+ph+'" oninput="LP.notes['+idx+']=this.value">'+esc(val)+'</textarea>';
+  if(t==='discussion'){var v2=LP.notes[idx]||'';return head+ttl+'<div class="lp-txt">'+esc(body.text||'')+'</div><textarea class="lp-note" placeholder="Ghi lại suy nghĩ của bạn…" oninput="LP.notes['+idx+']=this.value">'+esc(v2)+'</textarea>';}
+  if(t==='reflection'){var pr=body.prompts||['Một điều bạn học được','Một điều cần cải thiện','Một việc áp dụng ngay'];return head+'<h2 class="lp-h">“Ngày mai bạn sẽ làm khác điều gì?”</h2>'+pr.map(function(p,i){return '<div class="lp-txt" style="font-size:14px;margin-top:'+(i?8:0)+'px">'+esc(p)+':</div><textarea class="lp-note" style="min-height:56px" oninput="LP.notes[\'r'+idx+'_'+i+'\']=this.value">'+esc(LP.notes['r'+idx+'_'+i]||'')+'</textarea>';}).join('');}
+  if(t==='action_plan'){
+    if(body.text)return head+ttl+'<div class="lp-txt">'+esc(body.text)+'</div>';
+    return head+'<h2 class="lp-h">Kế hoạch hành động của bạn</h2>'
+     +'<div class="lp-txt" style="font-size:14px;color:#7a869a;margin-bottom:8px">Ghi rõ bạn sẽ áp dụng điều đã học vào công việc thế nào.</div>'
+     +'<div class="lp-txt" style="font-size:14px">Việc cần làm:</div><textarea class="lp-note" style="min-height:52px" oninput="LP.notes[\'ap_do\']=this.value">'+esc(LP.notes['ap_do']||'')+'</textarea>'
+     +'<div class="lp-txt" style="font-size:14px;margin-top:8px">Hạn hoàn thành:</div><textarea class="lp-note" style="min-height:44px" oninput="LP.notes[\'ap_dl\']=this.value">'+esc(LP.notes['ap_dl']||'')+'</textarea>'
+     +'<div class="lp-txt" style="font-size:14px;margin-top:8px">Kết quả kỳ vọng:</div><textarea class="lp-note" style="min-height:44px" oninput="LP.notes[\'ap_res\']=this.value">'+esc(LP.notes['ap_res']||'')+'</textarea>';
   }
-  // Mặc định (mục tiêu, khái niệm, ví dụ, case, tóm tắt)
-  return kind+ttl+'<div class="lp-txt">'+esc(body.text||'')+'</div>';
+  if(t==='summary'){var pts=body.points||(body.text?[body.text]:[]);if(pts.length)return head+ttl+'<div>'+pts.map(function(x){return '<div class="lp-txt" style="display:flex;gap:8px;margin:6px 0"><span>✅</span><span>'+esc(x)+'</span></div>';}).join('')+'</div>';}
+  return head+ttl+'<div class="lp-txt">'+esc(body.text||'')+'</div>';
 }
 function lpAnswer(idx,oi){
   if(LP.ans[idx])return;
