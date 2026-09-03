@@ -230,6 +230,7 @@ tr:hover td{background:#fafbff}
       <a data-v="setup">🏢 Khoa &amp; Khóa học</a>
       <a data-v="mycourses" id="navMyCourses" style="display:none">📚 Khóa học của tôi</a>
       <a data-v="mylearning" id="navLearn" style="display:none">🎓 Học tập</a>
+      <a data-v="myskills" id="navSkills" style="display:none">🎯 Hồ sơ kỹ năng</a>
       <a data-v="admin" id="navAdmin" style="display:none">⚙️ Quản trị</a>
     </nav>
     <div class="me">
@@ -317,6 +318,10 @@ tr:hover td{background:#fafbff}
       <div class="head"><h2>🎓 Học tập của tôi</h2></div>
       <div class="card"><div id="mlList"></div></div>
     </section>
+    <section id="v-myskills" class="hidden">
+      <div class="head"><h2>🎯 Hồ sơ kỹ năng của tôi</h2></div>
+      <div id="skWrap"></div>
+    </section>
     <section id="v-admin" class="hidden">
       <div class="head"><h2>⚙️ Quản trị</h2></div>
       <div class="card"><b>📩 Yêu cầu xin quyền xem khóa</b><div id="reqList" style="margin-top:10px"></div></div>
@@ -403,8 +408,8 @@ sb.auth.getSession().then(({data})=>{if(data.session)afterLogin();});
 /* ---------- NAV ---------- */
 function nav(v){
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-   ['dash','assess','learners','bank','setup','admin','mycourses','mylearning'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
-   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='admin')renderAdmin(); if(v==='mycourses')renderMyCourses(); if(v==='mylearning')renderMyLearning();
+   ['dash','assess','learners','bank','setup','admin','mycourses','mylearning','myskills'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
+   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='admin')renderAdmin(); if(v==='mycourses')renderMyCourses(); if(v==='mylearning')renderMyLearning(); if(v==='myskills')renderMySkills();
 }
 document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>nav(a.dataset.v));
 /* ---------- RBAC (Phase 1) ---------- */
@@ -415,6 +420,7 @@ function applyRole(){
   show('mycourses', ROLE==='admin'||ROLE==='trainer');
   show('admin', ROLE==='admin');
   show('mylearning', ROLE==='learner');
+  show('myskills', ROLE==='learner');
   var ad=document.getElementById('btnAddDept'); if(ad) ad.style.display=ROLE==='admin'?'':'none';
   var ac=document.getElementById('btnAddCourse'); if(ac) ac.style.display=(ROLE==='admin'||ROLE==='trainer')?'':'none';
 }
@@ -892,6 +898,46 @@ async function finishLesson(lessonId,courseId){
   var r=await sb.from('learning_progress').upsert({user_id:ME.id,course_id:courseId,lesson_id:lessonId,status:'completed',progress_percent:100,updated_at:new Date().toISOString()},{onConflict:'user_id,lesson_id'});
   if(r.error)return toast('Lỗi: '+r.error.message);
   closeModal(); toast('Đã hoàn thành bài học 🎉'); renderMyLearning();
+}
+/* ---------- 3.1 HỒ SƠ KỸ NĂNG (learner) ---------- */
+function skillColor(level){
+  if(level==='Chuyên gia')return'#0b6b3a';
+  if(level==='Thành thạo')return'#012463';
+  if(level==='Cơ bản')return'#b8860b';
+  if(level==='Mới bắt đầu')return'#b42318';
+  return'#7a869a';
+}
+async function renderMySkills(){
+  var box=document.getElementById('skWrap'); if(!box)return;
+  box.innerHTML='<div class="card"><div class="empty">Đang tải hồ sơ kỹ năng…</div></div>';
+  // Bước 1: tự khớp các bài đã làm qua QR về tài khoản (theo SĐT)
+  try{ await sb.rpc('link_my_participants'); }catch(e){}
+  // Bước 2: lấy hồ sơ kỹ năng
+  var r=await sb.rpc('my_skill_profile');
+  if(r.error){box.innerHTML='<div class="card"><div class="empty">Không tải được hồ sơ kỹ năng: '+esc(r.error.message)+'</div></div>';return;}
+  var p=r.data||{}; var skills=(p.skills||[]);
+  if(!skills.length){
+    box.innerHTML='<div class="card"><div class="empty" style="line-height:1.7">Bạn chưa có dữ liệu kỹ năng.<br><span style="color:#7a869a;font-size:13px">Hồ sơ kỹ năng được tạo từ kết quả các bài đánh giá. Hãy hoàn thành một bài kiểm tra — nếu bạn từng làm bài qua mã QR bằng đúng số điện thoại trong hồ sơ, kết quả sẽ tự động được ghi nhận vào đây.</span></div></div>';
+    return;
+  }
+  var oc=skillColor(p.overall_level);
+  var header='<div class="card" style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">'
+   +'<div style="text-align:center;min-width:120px"><div style="font-size:34px;font-weight:800;color:'+oc+'">'+(p.overall_percent||0)+'%</div>'
+   +'<span class="pill" style="background:'+oc+';color:#fff">'+esc(p.overall_level||'—')+'</span></div>'
+   +'<div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:16px;margin-bottom:4px">Năng lực tổng thể</div>'
+   +'<div style="color:#7a869a;font-size:13px">Tổng hợp từ <b>'+(p.attempts||0)+'</b> bài đánh giá · <b>'+(p.answered||0)+'</b> câu đã làm · <b>'+skills.length+'</b> nhóm kỹ năng.</div></div>'
+   +'</div></div>';
+  var rows=skills.map(function(s){
+    var col=skillColor(s.level);
+    return '<div style="border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px">'
+     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">'
+     +'<b style="font-size:15px">'+esc(s.competency)+'</b>'
+     +'<span class="pill" style="background:'+col+';color:#fff;white-space:nowrap">'+esc(s.level)+' · '+s.percent+'%</span></div>'
+     +'<div style="background:#eef2f7;border-radius:6px;height:12px;overflow:hidden"><div style="background:'+col+';height:12px;width:'+s.percent+'%;transition:width .6s"></div></div>'
+     +'<div style="color:#7a869a;font-size:12px;margin-top:6px">'+s.questions+' câu đã đánh giá ở nhóm kỹ năng này</div>'
+     +'</div>';
+  }).join('');
+  box.innerHTML=header+'<div class="card"><div style="font-weight:700;margin-bottom:10px">Chi tiết theo nhóm kỹ năng</div>'+rows+'</div>';
 }
 /* ---------- LOAD ---------- */
 async function loadAll(){
