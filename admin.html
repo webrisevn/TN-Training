@@ -1529,7 +1529,7 @@ async function results(id){
    <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
      <div class="kpi"><b>${n}</b><span>Lượt làm</span></div><div class="kpi"><b>${avg}</b><span>Điểm TB</span></div>
      <div class="kpi"><b>${pr}%</b><span>Tỷ lệ đạt</span></div><div class="kpi"><b>${hi}/${lo}</b><span>Cao/Thấp</span></div></div>
-   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap"><span style="color:#7a869a;font-size:12px">👉 Bấm vào một học viên để xem chi tiết từng câu</span><span style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇️ CSV tổng hợp</button> <button class="btn btn-gold btn-sm" onclick="exportDetailXlsx('${id}')">⬇️ Excel chi tiết</button></span></div>
+   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap"><span style="color:#7a869a;font-size:12px">👉 Bấm vào một học viên để xem chi tiết từng câu</span><span style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇️ CSV tổng hợp</button> <button class="btn btn-gold btn-sm" onclick="printClassPDF('${id}')">🖨️ Xuất PDF chi tiết</button></span></div>
    <div style="max-height:46vh;overflow:auto">${n?`<table><thead><tr><th>#</th><th>Họ tên</th><th>Chức vụ</th><th>Điểm</th><th>Kết quả</th><th>Thời gian</th></tr></thead><tbody>`+
      rows.map((r,i)=>`<tr style="cursor:pointer" onclick="openAttemptDetail('${r.id}')"><td>${i+1}</td><td><b>${esc(r.name)}</b></td><td>${esc(r.pos||'')}</td><td><b>${r.score}</b></td><td><span class="tag st-${r.pass?'published':'closed'}">${r.pass?'Đạt':'Chưa đạt'}</span></td><td>${Math.floor(r.time/60)}:${String(r.time%60).padStart(2,'0')}</td></tr>`).join('')+`</tbody></table>`:'<div class="empty">Chưa có lượt làm bài nào.</div>'}</div>`,true);
 }
@@ -1554,35 +1554,89 @@ async function openAttemptDetail(attId){
   }).join('');
   const total=(s.correct||0)+(s.wrong||0);
   modal(`<button class="x" onclick="closeModal()">×</button><h3>Chi tiết bài làm — ${esc(p.name||'')}</h3>
+    <div style="text-align:right;margin:-6px 0 6px"><button class="btn btn-gold btn-sm" onclick="printAttemptPDF('${attId}')">🖨️ Xuất PDF</button></div>
     <div style="color:#7a869a;margin-bottom:10px">Điểm <b style="color:#012463">${s.score||0}</b> · ${s.passed?'✅ Đạt':'❌ Chưa đạt'} · Đúng ${s.correct||0}/${total} · ${Math.floor((s.time_sec||0)/60)}:${String((s.time_sec||0)%60).padStart(2,'0')}</div>
     <div style="max-height:60vh;overflow:auto">${body||'<div class="empty">Không có dữ liệu chi tiết.</div>'}</div>`,true);
 }
-async function exportDetailXlsx(aid){
-  const a=ASSESS.find(x=>x.id===aid);
-  toast('Đang tạo báo cáo chi tiết…');
-  const {data:atts,error}=await sb.from('attempts').select('id,time_taken_sec,participants(full_name,position,phone_key),assessment_results(raw_score,percentage,passed,correct_count,wrong_count)').eq('assessment_id',aid).eq('status','submitted');
-  if(error){toast('Lỗi tải dữ liệu: '+error.message);return;}
-  const list=(atts||[]).slice().sort((x,y)=>{const sx=(x.assessment_results&&x.assessment_results[0]?x.assessment_results[0].raw_score:0);const sy=(y.assessment_results&&y.assessment_results[0]?y.assessment_results[0].raw_score:0);return sy-sx;});
-  const summary=[['STT','Họ tên','Chức vụ','SĐT','Điểm','Tỷ lệ %','Kết quả','Đúng','Sai','Thời gian (giây)']];
-  const detail=[['Họ tên','Câu số','Câu hỏi','Nhóm năng lực','Đáp án đúng','Học viên chọn','Kết quả']];
-  let i=0;
-  for(const at of list){
-    i++; const p=at.participants||{}; const r=(at.assessment_results&&at.assessment_results[0])||{};
-    summary.push([i,p.full_name||'',p.position||'',p.phone_key||'',r.raw_score||0,r.percentage||0,r.passed?'Đạt':'Chưa đạt',r.correct_count||0,r.wrong_count||0,at.time_taken_sec||0]);
-    const {data:det}=await sb.rpc('get_attempt_detail',{p_attempt:at.id});
-    const items=(det&&det.items)||[];
-    items.forEach((it,qi)=>{
-      const correct=(it.options||[]).filter(o=>o.is_correct).map(o=>o.text).join(' | ');
-      const chosen=(it.options||[]).filter(o=>o.selected).map(o=>o.text).join(' | ')||'(không chọn)';
-      const ans=(it.options||[]).some(o=>o.selected);
-      detail.push([p.full_name||'','Câu '+(qi+1),it.question_text||'',it.module||'',correct,chosen,it.is_correct?'Đúng':(ans?'Sai':'Chưa trả lời')]);
-    });
+/* ---------- BÁO CÁO PDF ĐẸP (in trình duyệt → lưu PDF) ---------- */
+function REPORT_CSS(){return '<style>'
+ +'*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#16233f;margin:0;padding:26px;background:#fff;font-size:14px}'
+ +'.rep-h{display:flex;align-items:center;gap:14px;border-bottom:3px solid #F2B84B;padding-bottom:12px;margin-bottom:16px}'
+ +'.rep-h img{height:44px}.rep-h h1{color:#012463;margin:0 0 3px;font-size:21px}.rep-h .sub{color:#6b7a99;font-size:12.5px}'
+ +'.kpis{display:flex;gap:10px;margin:14px 0}.kpi{flex:1;border:1px solid #e6eaf2;border-radius:10px;padding:10px;text-align:center}.kpi b{display:block;font-size:22px;color:#012463}.kpi span{font-size:11.5px;color:#6b7a99}'
+ +'h2.sec{color:#012463;font-size:16px;margin:16px 0 8px}'
+ +'table.rank{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0 4px}.rank th{background:#012463;color:#fff;padding:8px}.rank td{border-bottom:1px solid #eef2f7;padding:7px;text-align:center}.rank td:nth-child(2){text-align:left}'
+ +'.learner{page-break-before:always;margin-top:18px}.learner.first{page-break-before:auto}'
+ +'.learner h2{color:#012463;font-size:17px;border-left:4px solid #F2B84B;padding-left:10px;margin:0 0 4px}.learner .meta{color:#6b7a99;font-size:12.5px;margin-bottom:12px;padding-left:14px}'
+ +'.qc{border:1px solid #e6eaf2;border-radius:12px;padding:14px 16px;margin-bottom:12px;page-break-inside:avoid}'
+ +'.qh{font-weight:800;font-size:14px;margin-bottom:6px}.qh .mod{background:#eef2f7;color:#012463;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;margin-left:6px}'
+ +'.qq{font-weight:700;margin-bottom:10px;font-size:14.5px;color:#16233f}'
+ +'.ro{display:flex;align-items:center;gap:10px;border:1px solid #eef2f7;border-radius:8px;padding:9px 12px;margin:5px 0;font-size:13.5px}'
+ +'.ro .rl{color:#012463;font-weight:700;min-width:56px}.ro .rt{flex:1}.ro .rr{font-weight:800;min-width:16px;text-align:right}'
+ +'.ro.rc{background:#e9f7ef;border-color:#0b6b3a;color:#0b6b3a;font-weight:700}.ro.rw{background:#fdecea;border-color:#b42318;color:#b42318;font-weight:700}'
+ +'.ins{background:#fffdf3;border:1px solid #F2B84B;border-radius:10px;padding:10px 12px;margin-top:8px;color:#5a4a1e;font-size:13px;line-height:1.55}'
+ +'@media print{.noprint{display:none}body{padding:0 8px}}'
+ +'</style>';}
+function openPrint(fname,inner){
+  var w=window.open('','_blank');
+  if(!w){toast('Trình duyệt chặn cửa sổ in — hãy cho phép popup rồi thử lại.');return;}
+  w.document.write('<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>'+esc(fname)+'</title>'+REPORT_CSS()+'</head><body>'+inner
+    +'<div class="noprint" style="text-align:center;margin:26px 0"><button onclick="window.print()" style="background:#012463;color:#fff;border:none;padding:12px 24px;border-radius:10px;font-weight:800;font-size:15px;cursor:pointer">🖨️ In / Lưu PDF</button></div></body></html>');
+  w.document.close(); w.focus(); setTimeout(function(){try{w.print();}catch(e){}},600);
+}
+function repHeader(title,sub){
+  var logo=(typeof LOGO_INV!=='undefined'&&LOGO_INV)?'<img src="'+LOGO_INV+'" alt="logo">':'';
+  return '<div class="rep-h">'+logo+'<div><h1>'+esc(title)+'</h1><div class="sub">'+esc(sub)+'</div></div></div>';
+}
+function repCard(it,idx){
+  var ans=(it.options||[]).some(function(o){return o.selected;});
+  var ok=it.is_correct;
+  var col=ok?'#0b6b3a':(ans?'#b42318':'#8a6d00');
+  var head=(ok?'✓':(ans?'✗':'•'))+' Câu '+(idx+1);
+  var opts=(it.options||[]).map(function(o){
+    var cls='ro',rr='',ll='';
+    if(o.is_correct){cls+=' rc';rr='✓';}
+    if(o.selected){ll='[Chọn]';if(!o.is_correct){cls+=' rw';rr='✗';}}
+    return '<div class="'+cls+'"><span class="rl">'+esc(ll)+'</span><span class="rt">'+esc(o.text||'')+'</span><span class="rr">'+rr+'</span></div>';
+  }).join('');
+  return '<div class="qc"><div class="qh" style="color:'+col+'">'+head+(it.module?'<span class="mod">'+esc(it.module)+'</span>':'')+'</div>'
+    +'<div class="qq">'+esc(it.question_text||'')+'</div>'+opts
+    +(it.explanation?'<div class="ins">💡 '+esc(it.explanation)+'</div>':'')+'</div>';
+}
+function repLearner(det,first){
+  var p=(det&&det.participant)||{}, s=(det&&det.summary)||{}, items=(det&&det.items)||[];
+  var total=(s.correct||0)+(s.wrong||0);
+  var cards=items.map(function(it,i){return repCard(it,i);}).join('');
+  return '<div class="learner'+(first?' first':'')+'"><h2>'+esc(p.name||'')+'</h2>'
+    +'<div class="meta">'+esc(p.position||'')+(p.phone?' · '+esc(p.phone):'')+' — Điểm <b>'+(s.score||0)+'</b> · '+(s.passed?'Đạt':'Chưa đạt')+' · Đúng '+(s.correct||0)+'/'+total+'</div>'+cards+'</div>';
+}
+async function printAttemptPDF(attId){
+  toast('Đang tạo PDF…');
+  var r=await sb.rpc('get_attempt_detail',{p_attempt:attId});
+  if(r.error||!r.data){toast('Không tạo được PDF'+(r.error?': '+r.error.message:''));return;}
+  var nm=(r.data.participant&&r.data.participant.name)||'HocVien';
+  var inner=repHeader('Báo cáo chi tiết bài làm','Học viên: '+nm+' · '+new Date().toLocaleDateString('vi-VN'))+repLearner(r.data,true);
+  openPrint('BaoCao_'+slugify(nm),inner);
+}
+async function printClassPDF(aid){
+  var a=ASSESS.find(x=>x.id===aid);
+  toast('Đang tạo báo cáo PDF…');
+  var res=await sb.from('attempts').select('id,time_taken_sec,participants(full_name,position),assessment_results(raw_score,passed)').eq('assessment_id',aid).eq('status','submitted');
+  if(res.error){toast('Lỗi tải: '+res.error.message);return;}
+  var list=(res.data||[]).slice().sort(function(x,y){var sx=x.assessment_results&&x.assessment_results[0]?x.assessment_results[0].raw_score:0;var sy=y.assessment_results&&y.assessment_results[0]?y.assessment_results[0].raw_score:0;return sy-sx;});
+  if(!list.length){toast('Chưa có lượt làm bài nào.');return;}
+  var n=list.length, sc=list.map(function(x){return x.assessment_results&&x.assessment_results[0]?+x.assessment_results[0].raw_score:0;});
+  var avg=Math.round(sc.reduce(function(s,v){return s+v;},0)/n), pr=Math.round(list.filter(function(x){return x.assessment_results&&x.assessment_results[0]&&x.assessment_results[0].passed;}).length/n*100);
+  var hi=Math.max.apply(null,sc), lo=Math.min.apply(null,sc);
+  var kpis='<div class="kpis"><div class="kpi"><b>'+n+'</b><span>Lượt làm</span></div><div class="kpi"><b>'+avg+'</b><span>Điểm TB</span></div><div class="kpi"><b>'+pr+'%</b><span>Tỷ lệ đạt</span></div><div class="kpi"><b>'+hi+'/'+lo+'</b><span>Cao/Thấp</span></div></div>';
+  var rank='<h2 class="sec">Bảng xếp hạng</h2><table class="rank"><thead><tr><th>#</th><th>Họ tên</th><th>Chức vụ</th><th>Điểm</th><th>Kết quả</th><th>Thời gian</th></tr></thead><tbody>'
+    +list.map(function(x,i){var p=x.participants||{},r=(x.assessment_results&&x.assessment_results[0])||{},t=x.time_taken_sec||0;return '<tr><td>'+(i+1)+'</td><td>'+esc(p.full_name||'')+'</td><td>'+esc(p.position||'')+'</td><td><b>'+(r.raw_score||0)+'</b></td><td>'+(r.passed?'Đạt':'Chưa đạt')+'</td><td>'+Math.floor(t/60)+':'+String(t%60).padStart(2,'0')+'</td></tr>';}).join('')+'</tbody></table>';
+  var inner=repHeader('BÁO CÁO KẾT QUẢ — '+(a?a.title:''),'Ngày xuất: '+new Date().toLocaleDateString('vi-VN')+' · '+n+' lượt làm')+kpis+rank;
+  for(var i=0;i<list.length;i++){
+    var d=await sb.rpc('get_attempt_detail',{p_attempt:list[i].id});
+    if(d.data)inner+=repLearner(d.data,false);
   }
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(summary),'Tổng hợp');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(detail),'Chi tiết từng câu');
-  XLSX.writeFile(wb,'BaoCaoChiTiet_'+slugify(a?a.title:'assessment')+'.xlsx');
-  toast('Đã xuất báo cáo chi tiết 📊');
+  openPrint('BaoCaoLop_'+slugify(a?a.title:'baikiemtra'),inner);
 }
 function exportCSV(){
   const rows=window._exportRows||[];
