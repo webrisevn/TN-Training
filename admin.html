@@ -231,6 +231,7 @@ tr:hover td{background:#fafbff}
       <a data-v="mycourses" id="navMyCourses" style="display:none">📚 Khóa học của tôi</a>
       <a data-v="mylearning" id="navLearn" style="display:none">🎓 Học tập</a>
       <a data-v="myskills" id="navSkills" style="display:none">🎯 Hồ sơ kỹ năng</a>
+      <a data-v="myprofile" id="navProfile" style="display:none">👤 Hồ sơ cá nhân</a>
       <a data-v="admin" id="navAdmin" style="display:none">⚙️ Quản trị</a>
     </nav>
     <div class="me">
@@ -322,6 +323,10 @@ tr:hover td{background:#fafbff}
       <div class="head"><h2>🎯 Hồ sơ kỹ năng của tôi</h2></div>
       <div id="skWrap"></div>
     </section>
+    <section id="v-myprofile" class="hidden">
+      <div class="head"><h2>👤 Hồ sơ cá nhân</h2></div>
+      <div class="card" id="mpWrap"></div>
+    </section>
     <section id="v-admin" class="hidden">
       <div class="head"><h2>⚙️ Quản trị</h2></div>
       <div class="card"><b>📩 Yêu cầu xin quyền xem khóa</b><div id="reqList" style="margin-top:10px"></div></div>
@@ -386,7 +391,7 @@ async function submitChangePassword(){
   var r=await sb.auth.updateUser({password:p1});
   btn.disabled=false;btn.textContent='Cập nhật';
   if(r.error){msg.innerHTML='<span style="color:#b00">Lỗi: '+esc(r.error.message)+'</span>';return;}
-  try{ await sb.from('profiles').update({status:'active'}).eq('id',ME.id); }catch(e){}
+  try{ await sb.rpc('activate_self'); }catch(e){}
   msg.innerHTML='<span style="color:#0b6b3a">✓ Đã đổi mật khẩu. Lần sau đăng nhập bằng mật khẩu mới.</span>';
   setTimeout(closeModal,1500);
 }
@@ -408,8 +413,8 @@ sb.auth.getSession().then(({data})=>{if(data.session)afterLogin();});
 /* ---------- NAV ---------- */
 function nav(v){
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-   ['dash','assess','learners','bank','setup','admin','mycourses','mylearning','myskills'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
-   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='admin')renderAdmin(); if(v==='mycourses')renderMyCourses(); if(v==='mylearning')renderMyLearning(); if(v==='myskills')renderMySkills();
+   ['dash','assess','learners','bank','setup','admin','mycourses','mylearning','myskills','myprofile'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
+   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='admin')renderAdmin(); if(v==='mycourses')renderMyCourses(); if(v==='mylearning')renderMyLearning(); if(v==='myskills')renderMySkills(); if(v==='myprofile')renderMyProfile();
 }
 document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>nav(a.dataset.v));
 /* ---------- RBAC (Phase 1) ---------- */
@@ -421,6 +426,7 @@ function applyRole(){
   show('admin', ROLE==='admin');
   show('mylearning', ROLE==='learner');
   show('myskills', ROLE==='learner');
+  show('myprofile', ROLE==='learner');
   var ad=document.getElementById('btnAddDept'); if(ad) ad.style.display=ROLE==='admin'?'':'none';
   var ac=document.getElementById('btnAddCourse'); if(ac) ac.style.display=(ROLE==='admin'||ROLE==='trainer')?'':'none';
 }
@@ -435,9 +441,27 @@ async function decideAccess(courseId,trainerId,status){
   await loadAll(); renderAdmin(); toast(status==='approved'?'Đã duyệt':'Đã từ chối');
 }
 async function setUserRole(uid,role){
-  var {error}=await sb.from('profiles').update({role:role}).eq('id',uid);
-  if(error) return toast('Lỗi đổi vai trò: '+error.message);
+  var r=await sb.functions.invoke('admin-users',{body:{action:'set_role',user_id:uid,role:role}});
+  var err=r.error||(r.data&&r.data.error);
+  if(err){toast('Lỗi đổi vai trò: '+(err.message||err)); await loadAll(); renderAdmin(); return;}
   await loadAll(); renderAdmin(); toast('Đã cập nhật vai trò');
+}
+function editUserInfo(uid){
+  var p=PROFILES.find(function(x){return x.id===uid;}); if(!p)return;
+  var deptOpts='<option value="">— Không —</option>'+DEPTS.map(function(d){return '<option value="'+d.id+'" '+(p.department_id===d.id?'selected':'')+'>'+esc(d.name)+'</option>';}).join('');
+  modal('<button class="x" onclick="closeModal()">×</button><h3>✏️ Sửa thông tin</h3>'
+   +'<label class="fl">Họ tên</label><input class="input" id="euName" value="'+esc(p.full_name||'')+'"/>'
+   +'<label class="fl">Số điện thoại</label><input class="input" id="euPhone" value="'+esc(p.phone||'')+'"/>'
+   +'<label class="fl">Chức danh</label><input class="input" id="euPos" value="'+esc(p.position||'')+'"/>'
+   +'<label class="fl">Đơn vị/Khoa</label><select id="euDept">'+deptOpts+'</select>'
+   +'<div id="euMsg" style="margin-top:8px"></div>'
+   +'<button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px" onclick="saveUserInfo(\''+uid+'\')">Lưu</button>');
+}
+async function saveUserInfo(uid){
+  var rec={full_name:document.getElementById('euName').value.trim()||null,phone:document.getElementById('euPhone').value.trim()||null,position:document.getElementById('euPos').value.trim()||null,department_id:document.getElementById('euDept').value||null};
+  var r=await sb.from('profiles').update(rec).eq('id',uid);
+  if(r.error){document.getElementById('euMsg').innerHTML='<span style="color:#b00">Lỗi: '+esc(r.error.message)+'</span>';return;}
+  closeModal(); await loadAll(); renderAdmin(); toast('Đã lưu thông tin');
 }
 function pname(uid){var p=PROFILES.find(x=>x.id===uid);return p?(p.full_name||uid.slice(0,8)):uid.slice(0,8);}
 async function renderAdmin(){
@@ -457,11 +481,12 @@ async function renderAdmin(){
   document.getElementById('userList').innerHTML = (PROFILES&&PROFILES.length) ? PROFILES.map(function(p){
     var opts=roles.map(function(r){return '<option value="'+r+'" '+(p.role===r?'selected':'')+'>'+(ROLE_LABEL[r]||r)+'</option>';}).join('');
     var self=p.id===ME.id;
-    var actions = self ? '' :
+    var editBtn='<button class="btn btn-ghost btn-sm" onclick="editUserInfo(\''+p.id+'\')">✏️ Sửa</button>';
+    var actions = editBtn + (self ? '' :
       '<button class="btn btn-ghost btn-sm" onclick="resetUserPassword(\''+p.id+'\')">🔑 Reset MK</button>'
       + (p.status==='inactive'
           ? '<button class="btn btn-gold btn-sm" onclick="setUserActive(\''+p.id+'\',true)">Mở khóa</button>'
-          : '<button class="btn btn-danger btn-sm" onclick="setUserActive(\''+p.id+'\',false)">Khóa</button>');
+          : '<button class="btn btn-danger btn-sm" onclick="setUserActive(\''+p.id+'\',false)">Khóa</button>'));
     return '<div style="padding:10px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'
       +'<span style="min-width:200px">'+esc(p.full_name||p.id.slice(0,8))+(self?' <span class="pill">bạn</span>':'')+' '+badge(p.status||'active')
         +(p.phone?' <span style="color:#7a869a;font-size:12px">· '+esc(p.phone)+'</span>':'')+'</span>'
@@ -1079,6 +1104,26 @@ async function lpSave(){
   lpClose(); toast('Đã hoàn thành bài học 🎉'); renderMyLearning();
 }
 function lpClose(){var ov=document.getElementById('lpOverlay'); if(ov)ov.remove(); LP=null;}
+/* ---------- HỒ SƠ CÁ NHÂN (learner tự cập nhật) ---------- */
+function renderMyProfile(){
+  var box=document.getElementById('mpWrap'); if(!box)return;
+  var deptOpts='<option value="">— Chưa chọn —</option>'+(DEPTS||[]).map(function(d){return '<option value="'+d.id+'" '+(ME.department_id===d.id?'selected':'')+'>'+esc(d.name)+'</option>';}).join('');
+  box.innerHTML='<div style="max-width:540px">'
+   +'<label class="fl">Họ tên</label><input class="input" id="mpName" value="'+esc(ME.full_name||'')+'"/>'
+   +'<label class="fl">Số điện thoại</label><input class="input" id="mpPhone" value="'+esc(ME.phone||'')+'"/>'
+   +'<div style="color:#7a869a;font-size:12px;margin-top:3px">Số điện thoại giúp khớp kết quả bài đánh giá vào Hồ sơ kỹ năng của bạn.</div>'
+   +'<label class="fl">Chức danh</label><input class="input" id="mpPos" value="'+esc(ME.position||'')+'"/>'
+   +'<label class="fl">Đơn vị/Khoa</label><select class="input" id="mpDept">'+deptOpts+'</select>'
+   +'<label class="fl">Giới thiệu bản thân / mục tiêu học tập</label><textarea class="input" id="mpBio" style="min-height:96px">'+esc(ME.bio||'')+'</textarea>'
+   +'<div id="mpMsg" style="margin-top:8px"></div>'
+   +'<button class="btn btn-gold" style="margin-top:12px" onclick="saveMyProfile()">Lưu hồ sơ</button></div>';
+}
+async function saveMyProfile(){
+  var rec={full_name:document.getElementById('mpName').value.trim()||null,phone:document.getElementById('mpPhone').value.trim()||null,position:document.getElementById('mpPos').value.trim()||null,department_id:document.getElementById('mpDept').value||null,bio:document.getElementById('mpBio').value.trim()||null};
+  var r=await sb.from('profiles').update(rec).eq('id',ME.id);
+  if(r.error){document.getElementById('mpMsg').innerHTML='<span style="color:#b00">Lỗi: '+esc(r.error.message)+'</span>';return;}
+  Object.assign(ME,rec); toast('Đã lưu hồ sơ 👤');
+}
 /* ---------- 3.1 HỒ SƠ KỸ NĂNG (learner) ---------- */
 function skillColor(level){
   if(level==='Chuyên gia')return'#0b6b3a';
