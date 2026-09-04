@@ -244,9 +244,8 @@ tr:hover td{background:#fafbff}
   <main class="main">
     <!-- DASH -->
     <section id="v-dash">
-      <div class="head"><h2>Tổng quan</h2></div>
-      <div class="kpis" id="dashKpis"></div>
-      <div class="card"><b style="font-size:15px">Bài kiểm tra gần đây</b><div id="dashRecent" style="margin-top:10px"></div></div>
+      <div class="head"><h2>Trung tâm điều hành đào tạo &amp; năng lực</h2><button class="btn btn-ghost btn-sm" onclick="renderDash()">↻ Làm mới</button></div>
+      <div id="dashBody"></div>
     </section>
 
     <!-- ASSESSMENTS -->
@@ -330,10 +329,25 @@ tr:hover td{background:#fafbff}
     </section>
     <section id="v-mylearning" class="hidden">
       <div class="head"><h2>🎓 Học tập của tôi</h2></div>
+      <div class="card" style="background:linear-gradient(135deg,#012463,#0a1b4d);color:#fff;margin-bottom:12px">
+        <div style="font-weight:800;font-size:15px">Hành trình phát triển năng lực của bạn</div>
+        <div style="color:#c7d0ea;font-size:12.5px;margin:5px 0 12px;line-height:1.6">Mỗi khóa học là một chặng đường: làm bài đầu vào để biết điểm xuất phát → học → luyện tập → làm bài đầu ra → xem kết quả và lộ trình phát triển riêng cho bạn.</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <span class="pill" style="background:rgba(255,255,255,.14);color:#fff">1 · Kiểm tra đầu vào</span>
+          <span style="color:#7f8cbe">→</span>
+          <span class="pill" style="background:rgba(255,255,255,.14);color:#fff">2 · Học bài</span>
+          <span style="color:#7f8cbe">→</span>
+          <span class="pill" style="background:rgba(255,255,255,.14);color:#fff">3 · Luyện tập</span>
+          <span style="color:#7f8cbe">→</span>
+          <span class="pill" style="background:rgba(255,255,255,.14);color:#fff">4 · Kiểm tra đầu ra</span>
+          <span style="color:#7f8cbe">→</span>
+          <span class="pill" style="background:var(--gold);color:var(--navy);font-weight:800">5 · Kết quả &amp; lộ trình</span>
+        </div>
+      </div>
       <div class="card"><div id="mlList"></div></div>
     </section>
     <section id="v-myskills" class="hidden">
-      <div class="head"><h2>🎯 Hồ sơ kỹ năng của tôi</h2></div>
+      <div class="head"><h2>🎯 Hồ sơ kỹ năng của tôi</h2><button class="btn btn-gold btn-sm" onclick="openProfileCard()">📋 Hồ sơ năng lực đầy đủ</button></div>
       <div id="skWrap"></div>
     </section>
     <section id="v-myprofile" class="hidden">
@@ -1304,19 +1318,57 @@ async function loadAll(){
 }
 
 /* ---------- DASHBOARD ---------- */
+function dcColor(p){p=+p||0;return p>=75?'#1a9d5a':p>=60?'#F29202':'#d64545';}
+function dcKpi(k){return '<div class="kpi"><b'+(k[2]?' style="color:'+k[2]+'"':'')+'>'+k[1]+'</b><span>'+esc(k[0])+'</span></div>';}
+function dcBar(label,pct,target){
+  pct=Math.round(pct||0); target=(target!=null)?Math.round(target):null;
+  return '<div style="margin:9px 0"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span>'+esc(label)+'</span><b>'+pct+'%'+(target!=null?' <span style="color:var(--muted);font-weight:600">/ mục tiêu '+target+'%</span>':'')+'</b></div>'
+    +'<div style="height:9px;background:#eef1f7;border-radius:6px;position:relative;overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:'+pct+'%;background:'+dcColor(pct)+';border-radius:6px"></i>'
+    +(target!=null?'<span style="position:absolute;top:-2px;bottom:-2px;left:'+Math.min(100,target)+'%;width:2px;background:#012463"></span>':'')+'</div></div>';
+}
 async function renderDash(){
-  const org=ORG.id;
-  const {data:atts}=await sb.from('attempts').select('id, assessment_id, time_taken_sec, status, assessment_results(percentage,passed)').eq('status','submitted');
-  const subs=(atts||[]);
-  const scores=subs.map(a=>a.assessment_results&&a.assessment_results[0]?a.assessment_results[0].percentage:null).filter(x=>x!=null);
-  const avg=scores.length?Math.round(scores.reduce((s,x)=>s+ +x,0)/scores.length):0;
-  const pass=subs.filter(a=>a.assessment_results&&a.assessment_results[0]&&a.assessment_results[0].passed).length;
-  const pr=subs.length?Math.round(pass/subs.length*100):0;
-  document.getElementById('dashKpis').innerHTML=[
-    ['Bài kiểm tra',ASSESS.length],['Lượt làm bài',subs.length],['Điểm TB',avg+'%'],
-    ['Tỷ lệ đạt',pr+'%'],['Ngân hàng câu hỏi',BANK.length]
-  ].map(k=>`<div class="kpi"><b>${k[1]}</b><span>${k[0]}</span></div>`).join('');
-  document.getElementById('dashRecent').innerHTML=ASSESS.slice(0,6).length?tableAssess(ASSESS.slice(0,6)):'<div class="empty">Chưa có bài kiểm tra nào.</div>';
+  const box=document.getElementById('dashBody');
+  box.innerHTML='<div class="card"><div class="empty">Đang tải tổng quan…</div></div>';
+  const {data,error}=await sb.rpc('dashboard_overview');
+  if(error){box.innerHTML='<div class="card"><div class="empty">Không tải được tổng quan.<br><span style="font-size:12px">'+esc(error.message||'')+'</span></div></div>';return;}
+  const d=data||{}, ppl=d.people||{}, prf=d.performance||{}, cmp=d.competency||{}, act=d.action||{};
+  const hasData=(ppl.total_employees||0)>0||(prf.avg_score||0)>0||(cmp.overall||0)>0;
+  if(!hasData){
+    box.innerHTML='<div class="card" style="text-align:center;padding:34px"><div style="font-size:42px">📊</div>'
+      +'<div style="font-weight:800;color:var(--navy);font-size:17px;margin-top:8px">Chưa có dữ liệu đào tạo</div>'
+      +'<div style="color:var(--muted);margin-top:6px;max-width:470px;margin-inline:auto;line-height:1.6">Hãy tạo khóa học, thêm học viên và cho làm bài kiểm tra. Khi có dữ liệu, bảng điều hành sẽ hiện: ai đã học, kết quả ra sao, ai đang yếu và cần đào tạo gì tiếp theo.</div></div>';
+    return;
+  }
+  const imp=prf.improvement, impTxt=(imp==null)?'—':((imp>=0?'+':'')+imp+' điểm'), impCol=(imp==null)?'var(--muted)':(imp>=0?'#0b6b3a':'#b42318');
+  const kpiPeople=[['Tổng nhân viên',ppl.total_employees||0,''],['Đã ghi danh',ppl.enrolled||0,''],['Đang học',ppl.in_progress||0,''],['Đã hoàn thành',ppl.completed||0,'']];
+  const kpiPerf=[['Điểm trung bình',(prf.avg_score||0)+'%',dcColor(prf.avg_score)],['Tỷ lệ đạt',(prf.pass_rate||0)+'%',dcColor(prf.pass_rate)],['Tỷ lệ hoàn thành',(prf.completion_rate||0)+'%',dcColor(prf.completion_rate)],['Năng lực chung',(cmp.overall||0)+'%',dcColor(cmp.overall)]];
+  const prePost=(prf.pretest_avg==null&&prf.posttest_avg==null)
+    ? '<div class="empty" style="padding:14px;line-height:1.6">Chưa đo được cải thiện trước–sau. Trong bài kiểm tra, đặt <b>Loại bài = Đầu vào (Pre-test)</b> và <b>Đầu ra (Post-test)</b> cho cùng một khóa để hệ thống tính mức tiến bộ.</div>'
+    : '<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;justify-content:center">'
+      +'<div style="text-align:center"><div style="font-size:12px;color:var(--muted)">Trước đào tạo</div><div style="font-size:26px;font-weight:800;color:var(--navy)">'+(prf.pretest_avg==null?'—':prf.pretest_avg+'%')+'</div></div>'
+      +'<div style="font-size:22px;color:var(--muted)">→</div>'
+      +'<div style="text-align:center"><div style="font-size:12px;color:var(--muted)">Sau đào tạo</div><div style="font-size:26px;font-weight:800;color:var(--navy)">'+(prf.posttest_avg==null?'—':prf.posttest_avg+'%')+'</div></div>'
+      +'<div style="text-align:center;padding-left:14px;border-left:1px solid var(--line)"><div style="font-size:12px;color:var(--muted)">Cải thiện</div><div style="font-size:26px;font-weight:800;color:'+impCol+'">'+impTxt+'</div></div></div>';
+  const gaps=cmp.top_gaps||[];
+  const gapsHtml=gaps.length?gaps.map(g=>dcBar(g.competency,g.percent,g.target)).join(''):'<div class="empty">Chưa có dữ liệu năng lực.</div>';
+  const dept=cmp.by_department||[];
+  const deptHtml=dept.length?'<table><thead><tr><th>Phòng ban</th><th>Năng lực</th><th>Học viên</th></tr></thead><tbody>'+dept.map(x=>'<tr><td>'+esc(x.department||'')+'</td><td><b style="color:'+dcColor(x.percent)+'">'+Math.round(x.percent||0)+'%</b></td><td>'+(x.learners||0)+'</td></tr>').join('')+'</tbody></table>':'<div class="empty">Chưa gán phòng ban cho học viên, hoặc chưa có bài làm.</div>';
+  const sup=cmp.needing_support||[];
+  const supHtml=sup.length?sup.map(s=>'<div onclick="openProfileCard(\''+s.user_id+'\')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer"><span>'+esc(s.name||'(chưa đặt tên)')+'</span><b style="color:'+dcColor(s.percent)+'">'+Math.round(s.percent||0)+'%</b></div>').join(''):'<div class="empty">Không có ai dưới ngưỡng — tốt!</div>';
+  const rec=act.recommended_training||[];
+  const recHtml=rec.length?rec.map(r=>'<span class="pill" style="background:#fff7e6;color:#8a6d00;margin:3px 5px 3px 0;display:inline-block">'+esc(r)+'</span>').join(''):'<div class="empty">Chưa đủ dữ liệu để gợi ý.</div>';
+  const ra=act.reassessment_due||[];
+  const raHtml=ra.length?ra.map(x=>{const dt=x.due?new Date(x.due):null;const overdue=dt&&dt<new Date();return '<div onclick="openProfileCard(\''+x.user_id+'\')" style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer"><span>'+esc(x.name||'')+'</span><b style="color:'+(overdue?'#b42318':'var(--muted)')+'">'+(dt?dt.toLocaleDateString('vi-VN'):'—')+(overdue?' · quá hạn':'')+'</b></div>';}).join(''):'<div class="empty">Chưa có lịch đánh giá lại.</div>';
+  const G='display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px';
+  box.innerHTML=
+     '<div class="kpis">'+kpiPeople.map(dcKpi).join('')+'</div>'
+    +'<div class="kpis" style="margin-top:2px">'+kpiPerf.map(dcKpi).join('')+'</div>'
+    +'<div class="card"><b style="font-size:15px">Cải thiện trước → sau đào tạo</b><div style="margin-top:12px">'+prePost+'</div></div>'
+    +'<div style="'+G+'"><div class="card"><b style="font-size:15px">Khoảng trống năng lực lớn nhất</b><div style="margin-top:10px">'+gapsHtml+'</div></div>'
+    +'<div class="card"><b style="font-size:15px">Năng lực theo phòng ban</b><div style="margin-top:10px">'+deptHtml+'</div></div></div>'
+    +'<div style="'+G+'"><div class="card"><b style="font-size:15px">⚠️ Học viên cần hỗ trợ</b><div style="font-size:12px;color:var(--muted);margin:2px 0 8px">Bấm để xem hồ sơ năng lực</div>'+supHtml+'</div>'
+    +'<div class="card"><b style="font-size:15px">🗓️ Sắp đến hạn đánh giá lại</b><div style="font-size:12px;color:var(--muted);margin:2px 0 8px">Bấm để xem hồ sơ</div>'+raHtml+'</div></div>'
+    +'<div class="card"><b style="font-size:15px">🎯 Đề xuất đào tạo tiếp theo</b><div style="margin-top:10px">'+recHtml+'</div></div>';
 }
 
 /* ---------- SETUP ---------- */
@@ -1591,12 +1643,79 @@ function surveyQR(sid){
    +'</div>');
   var cv=qrCanvas(url,240);cv.style.width='240px';cv.style.height='240px';document.getElementById('svQrHolder').appendChild(cv);
 }
-function surveyDashboard(sid){ toast('Dashboard tổng hợp + lọc + xuất Excel sẽ có ở bước tiếp theo (S3). Số phản hồi đang hiển thị ở cột "Phản hồi".'); }
+function svgAgg(list){
+  var dimSum={},dimCnt={},levels={},total=list.length,ovSum=0;
+  list.forEach(function(r){var lv=r.level||'—';levels[lv]=(levels[lv]||0)+1;ovSum+=(+r.overall_percent||0);
+    var ds=r.dim_scores||{};Object.keys(ds).forEach(function(k){dimSum[k]=(dimSum[k]||0)+(+ds[k]||0);dimCnt[k]=(dimCnt[k]||0)+1;});});
+  var dims={};Object.keys(dimSum).forEach(function(k){dims[k]=Math.round(dimSum[k]/dimCnt[k]);});
+  return {total:total,levels:levels,dims:dims,overall:total?Math.round(ovSum/total):0};
+}
+function svUnique(list,key){var s={};list.forEach(function(r){if(r[key])s[r[key]]=1;});return Object.keys(s).sort();}
+function surveyDashboard(sid){
+  var s=SURVEYS.find(function(x){return x.id===sid;});
+  window._svSid=sid; window._svTitle=s?s.title:'Khảo sát';
+  modal('<button class="x" onclick="closeModal()">×</button><h3>📊 Dashboard — '+esc(s?s.title:'')+'</h3><div id="svDashBody"><div class="empty">Đang tải…</div></div>',true);
+  loadSurveyDash();
+}
+async function loadSurveyDash(){
+  var r=await sb.from('survey_responses').select('*').eq('survey_id',window._svSid).order('submitted_at',{ascending:false});
+  window._svResp=r.data||[]; renderSurveyDash();
+}
+function renderSurveyDash(){
+  var all=window._svResp||[];
+  var fd=(document.getElementById('svfDept')||{}).value||''; var fp=(document.getElementById('svfPos')||{}).value||'';
+  var list=all.filter(function(r){return (!fd||r.department===fd)&&(!fp||r.position===fp);});
+  var A=svgAgg(list);
+  var LORDER=['Mới bắt đầu','Khám phá','Thực hành','Dẫn dắt']; var LCOL={'Mới bắt đầu':'#b42318','Khám phá':'#b8860b','Thực hành':'#1668a8','Dẫn dắt':'#0b6b3a'};
+  var lvBars=LORDER.map(function(l){var n=A.levels[l]||0;var pct=A.total?Math.round(n/A.total*100):0;return '<div style="margin:5px 0"><div style="display:flex;justify-content:space-between;font-size:12px"><span>'+l+'</span><span>'+n+' ('+pct+'%)</span></div><div style="background:#eef2f7;border-radius:6px;height:10px;overflow:hidden"><div style="background:'+LCOL[l]+';height:10px;width:'+pct+'%"></div></div></div>';}).join('');
+  var radarItems=Object.keys(A.dims).map(function(k){return {label:k,percent:A.dims[k]};});
+  var radar=radarItems.length>=3?pfRadar(radarItems,300):'<div style="color:#7a869a;font-size:13px">Cần ≥3 chiều để vẽ radar.</div>';
+  var depts=svUnique(all,'department'), poss=svUnique(all,'position');
+  var deptOpt='<option value="">Tất cả phòng ban</option>'+depts.map(function(d){return '<option value="'+esc(d)+'"'+(d===fd?' selected':'')+'>'+esc(d)+'</option>';}).join('');
+  var posOpt='<option value="">Tất cả chức vụ</option>'+poss.map(function(d){return '<option value="'+esc(d)+'"'+(d===fp?' selected':'')+'>'+esc(d)+'</option>';}).join('');
+  var dsorted=Object.keys(A.dims).map(function(k){return {k:k,v:A.dims[k]};}).sort(function(a,b){return a.v-b.v;});
+  var weak=dsorted.slice(0,3);
+  var rmap=weak.length?('<ol style="margin:6px 0 0;padding-left:18px;font-size:13.5px">'+weak.map(function(w){return '<li><b>'+esc(w.k)+'</b> ('+w.v+'%) — ưu tiên đào tạo & xây bài giảng/thực hành cho nhóm này.</li>';}).join('')+'</ol>'):'<div style="color:#7a869a">Chưa đủ dữ liệu.</div>';
+  var rows=list.slice(0,300).map(function(r){return '<tr><td>'+esc(r.respondent_name||'(ẩn danh)')+'</td><td>'+esc(r.department||'')+'</td><td>'+esc(r.position||'')+'</td><td><b>'+(r.overall_percent||0)+'%</b></td><td>'+esc(r.level||'')+'</td><td>'+(r.submitted_at?new Date(r.submitted_at).toLocaleDateString('vi-VN'):'')+'</td></tr>';}).join('');
+  document.getElementById('svDashBody').innerHTML=
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><select class="input" id="svfDept" onchange="renderSurveyDash()" style="flex:1;min-width:150px">'+deptOpt+'</select><select class="input" id="svfPos" onchange="renderSurveyDash()" style="flex:1;min-width:150px">'+posOpt+'</select><button class="btn btn-gold btn-sm" onclick="exportSurveyXlsx()">⬇️ Xuất Excel</button></div>'
+    +'<div class="kpis" style="grid-template-columns:repeat(2,1fr)"><div class="kpi"><b>'+A.total+'</b><span>Phản hồi</span></div><div class="kpi"><b>'+A.overall+'%</b><span>Điểm TB</span></div></div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px"><div style="flex:1;min-width:240px"><div style="font-weight:700;margin-bottom:6px">Phân bố mức sẵn sàng</div>'+lvBars+'</div><div style="flex:1;min-width:260px;text-align:center"><div style="font-weight:700;margin-bottom:6px">Điểm theo các chiều</div>'+radar+'</div></div>'
+    +'<div style="border:1px solid #F2B84B;background:#fffdf3;border-radius:10px;padding:12px;margin-top:12px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><b style="color:#8a5a00">🧭 Đề xuất lộ trình đào tạo (ưu tiên chiều yếu)</b><button class="btn btn-navy btn-sm" onclick="surveyRoadmapAI()">✨ Đề xuất chi tiết</button></div>'+rmap+'<div id="svRoadmapAI" style="margin-top:8px"></div></div>'
+    +'<div style="max-height:34vh;overflow:auto;margin-top:12px"><table><thead><tr><th>Người tham gia</th><th>Phòng ban</th><th>Chức vụ</th><th>Điểm</th><th>Mức</th><th>Ngày</th></tr></thead><tbody>'+(rows||'<tr><td colspan="6" class="empty">Chưa có phản hồi.</td></tr>')+'</tbody></table></div>';
+}
+function exportSurveyXlsx(){
+  var all=window._svResp||[];
+  var dims={}; all.forEach(function(r){Object.keys(r.dim_scores||{}).forEach(function(k){dims[k]=1;});}); var dimKeys=Object.keys(dims);
+  var head=['Người tham gia','Phòng ban','Chức vụ','Mức','Điểm %'].concat(dimKeys).concat(['Ngày']);
+  var rows=[head];
+  all.forEach(function(r){var ds=r.dim_scores||{};rows.push([r.respondent_name||'(ẩn danh)',r.department||'',r.position||'',r.level||'',r.overall_percent||0].concat(dimKeys.map(function(k){return ds[k]!=null?ds[k]:'';})).concat([r.submitted_at?new Date(r.submitted_at).toLocaleDateString('vi-VN'):'']));});
+  var A=svgAgg(all);
+  var sum=[['Chỉ số','Giá trị'],['Tổng phản hồi',A.total],['Điểm trung bình',A.overall+'%'],['','']];
+  ['Mới bắt đầu','Khám phá','Thực hành','Dẫn dắt'].forEach(function(l){sum.push(['Mức: '+l,(A.levels[l]||0)]);});
+  sum.push(['','']); sum.push(['Điểm trung bình theo chiều','']); Object.keys(A.dims).forEach(function(k){sum.push([k,A.dims[k]+'%']);});
+  var wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),'Tổng hợp');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Chi tiết');
+  XLSX.writeFile(wb,'KhaoSat_'+slugify(window._svTitle||'survey')+'.xlsx');
+  toast('Đã xuất Excel 📊');
+}
+async function surveyRoadmapAI(){
+  var A=svgAgg(window._svResp||[]);
+  var box=document.getElementById('svRoadmapAI'); box.innerHTML='<div style="color:#7a869a">Đang tạo đề xuất…</div>';
+  var r=await sb.functions.invoke('super-service',{body:{action:'survey_roadmap',title:window._svTitle,dims:A.dims,levels:A.levels}});
+  var err=r.error||(r.data&&r.data.error);
+  if(err){box.innerHTML='<div style="color:#b00">Không tạo được đề xuất: '+esc(err.message||err)+'</div>';return;}
+  var d=(r.data&&r.data.data)||{};
+  var phases=(d.phases||[]).map(function(p,i){return '<div style="margin-top:6px"><b>Giai đoạn '+(i+1)+': '+esc(p.title||'')+'</b><div style="color:#31405f;font-size:13px">Trọng tâm: '+esc(p.focus||'')+' — Mục tiêu: '+esc(p.goal||'')+'</div></div>';}).join('');
+  box.innerHTML=(d.summary?'<div style="margin-bottom:4px">'+esc(d.summary)+'</div>':'')+(phases||'<div style="color:#7a869a">Chưa có đề xuất.</div>');
+}
 /* ---------- ASSESSMENTS ---------- */
 function tableAssess(list){
   return `<table><thead><tr><th>Tiêu đề</th><th>Khóa</th><th>Số câu</th><th>Trạng thái</th><th></th></tr></thead><tbody>`+
    list.map(a=>{const c=COURSES.find(x=>x.id===a.course_id);
-     return `<tr><td><b>${esc(a.title)}</b></td><td>${esc(c?c.name:'')}</td><td>${a.number_of_questions}</td>
+     const kb=a.kind==='pre'?'<span class="pill" style="background:#e7efff;color:#012463;margin-left:5px">Đầu vào</span>':a.kind==='post'?'<span class="pill" style="background:#e6f5ec;color:#0b6b3a;margin-left:5px">Đầu ra</span>':'';
+     return `<tr><td><b>${esc(a.title)}</b>${kb}</td><td>${esc(c?c.name:'')}</td><td>${a.number_of_questions}</td>
      <td><span class="tag st-${a.status}">${a.status}</span></td>
      <td class="actions">
        <button class="btn btn-ghost btn-sm" onclick="openAssess('${a.id}')">Sửa</button>
@@ -1605,6 +1724,7 @@ function tableAssess(list){
        <button class="btn btn-navy btn-sm" onclick="showQR('${a.id}')">QR</button>
        <button class="btn btn-ghost btn-sm" onclick="openBoard('${a.id}')">📺 Màn chiếu</button>
        <button class="btn btn-ghost btn-sm" onclick="classReport('${a.id}')">📄 Báo cáo lớp</button>
+       <button class="btn btn-ghost btn-sm" onclick="openEffectiveness('${a.course_id||''}')">📊 Hiệu quả</button>
        <button class="btn btn-ghost btn-sm" onclick="results('${a.id}')">Kết quả</button>
        <button class="btn btn-ghost btn-sm" onclick="openCertIssue('${a.id}')">🎖️ Chứng chỉ</button>
      </td></tr>`}).join('')+`</tbody></table>`;
@@ -1633,6 +1753,15 @@ function openAssess(id){
      <div><label class="fl">Số câu hỏi</label><input class="input" id="aNq" type="number" value="${a?a.number_of_questions:20}"/></div>
      <div><label class="fl">Điểm đạt (%)</label><input class="input" id="aPass" type="number" value="${a?a.passing_score:70}"/></div>
    </div>
+   <div class="row">
+     <div><label class="fl">Loại bài</label><select id="aKind">
+       <option value="quiz" ${(!a||!a.kind||a.kind==='quiz')?'selected':''}>Bài kiểm tra thường</option>
+       <option value="pre" ${a&&a.kind==='pre'?'selected':''}>Đầu vào — trước đào tạo (Pre-test)</option>
+       <option value="post" ${a&&a.kind==='post'?'selected':''}>Đầu ra — sau đào tạo (Post-test)</option>
+     </select></div>
+     <div><label class="fl">Đánh giá lại sau (ngày)</label><input class="input" id="aReassess" type="number" value="${a&&a.reassess_after_days!=null?a.reassess_after_days:30}"/></div>
+   </div>
+   <div style="font-size:12px;color:var(--muted);margin:-2px 0 4px">Ghép một bài <b>Đầu vào</b> và một bài <b>Đầu ra</b> cùng một khóa để hệ thống đo mức tiến bộ trước–sau.</div>
    <label class="fl">Hiển thị & tùy chọn</label>
    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
      <label><input type="checkbox" id="aRandQ" ${chk('randomize_questions',true)}/> Trộn thứ tự câu</label>
@@ -1651,6 +1780,7 @@ async function saveAssess(id){
     course_id:course?course.id:null,department_id:course?course.department_id:null,
     duration_minutes:+document.getElementById('aDur').value||15,number_of_questions:+document.getElementById('aNq').value||20,
     passing_score:+document.getElementById('aPass').value||70,
+    kind:document.getElementById('aKind').value||'quiz',reassess_after_days:+document.getElementById('aReassess').value||30,
     randomize_questions:aRandQ.checked,randomize_answers:aRandA.checked,show_leaderboard:aLead.checked,
     show_feedback_after_answer:aFb.checked,require_position:aPos.checked,require_zalo:aZalo.checked,template_type:'manager_challenge'};
   if(id){await sb.from('assessments').update(rec).eq('id',id);}
@@ -2016,7 +2146,7 @@ async function renderLearners(){
   const q=(document.getElementById('lnSearch').value||'').toLowerCase();
   const rows=LEARNERS.filter(x=>!q||(x.full_name||'').toLowerCase().includes(q)||(x.phone||'').includes(q));
   box.innerHTML=rows.length?`<table><thead><tr><th>Học viên</th><th>SĐT/Zalo</th><th>Bộ phận</th><th>Số bài</th><th>Điểm TB</th><th>Tỷ lệ đạt</th><th>Gần nhất</th><th></th></tr></thead><tbody>`+
-    rows.map(x=>`<tr style="cursor:pointer" onclick="openLearner('${x.id}')"><td><b>${esc(x.full_name)}</b></td><td>${esc(x.phone||'')}</td><td>${esc(x.position||'')}</td><td>${x.attempts}</td><td><b>${x.avg_score==null?'-':x.avg_score}</b></td><td>${x.pass_rate==null?'-':x.pass_rate+'%'}</td><td class="pill">${x.last_at?new Date(x.last_at).toLocaleDateString('vi-VN'):''}</td><td><button class="btn btn-danger btn-sm" onclick="event.stopPropagation();delLearner('${x.id}')">🗑</button></td></tr>`).join('')+`</tbody></table>`
+    rows.map(x=>`<tr style="cursor:pointer" onclick="openLearner('${x.id}')"><td><b>${esc(x.full_name)}</b></td><td>${esc(x.phone||'')}</td><td>${esc(x.position||'')}</td><td>${x.attempts}</td><td><b>${x.avg_score==null?'-':x.avg_score}</b></td><td>${x.pass_rate==null?'-':x.pass_rate+'%'}</td><td class="pill">${x.last_at?new Date(x.last_at).toLocaleDateString('vi-VN'):''}</td><td style="white-space:nowrap">${x.user_id?`<button class="btn btn-navy btn-sm" onclick="event.stopPropagation();openProfileCard('${x.user_id}')">📋 Hồ sơ</button> `:''}<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();delLearner('${x.id}')">🗑</button></td></tr>`).join('')+`</tbody></table>`
     :'<div class="empty">Chưa có học viên nào làm bài (có SĐT).</div>';
 }
 /* ==== PREMIUM LEARNER PROFILE v4 (thay openLearner cu) ==== */
@@ -2113,6 +2243,76 @@ function pfTrend(points, w, h) {
     ${dots}${xl}
   </svg>`;
 }
+
+/* ---------- HỒ SƠ NĂNG LỰC HỢP NHẤT (P0-3) ---------- */
+function pdot(p){p=+p||0;return p>=75?'🟢':p>=60?'🟡':'🔴';}
+function profileHTML(d,forPrint){
+  d=d||{}; var id=d.identity||{}, skills=d.skills||[], topics=d.topics||[], comp=d.completed_courses||[];
+  var head=forPrint?'':'<h3 style="margin:0 0 2px">Hồ sơ năng lực</h3>'
+    +'<div style="font-weight:800;color:var(--navy);font-size:18px">'+esc(id.name||'(chưa đặt tên)')+'</div>'
+    +'<div style="color:var(--muted);font-size:13px;margin-bottom:10px">'+[esc(id.position||''),esc(id.department||'')].filter(Boolean).join(' · ')+'</div>';
+  var ov='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:8px 0 6px">'
+    +'<div style="background:#f4f7fd;border-radius:12px;padding:12px 18px;text-align:center"><div style="font-size:12px;color:var(--muted)">Năng lực chung</div><div style="font-size:30px;font-weight:800;color:'+dcColor(d.overall_percent)+'">'+(d.overall_percent||0)+'%</div><div style="font-size:12px;font-weight:700;color:var(--navy)">'+esc(d.overall_level||'')+'</div></div>';
+  if(d.pretest_avg!=null||d.posttest_avg!=null){var imp=d.improvement,ic=(imp==null)?'#6b7a99':(imp>=0?'#0b6b3a':'#b42318');
+    ov+='<div style="background:#f4f7fd;border-radius:12px;padding:12px 18px;text-align:center"><div style="font-size:12px;color:var(--muted)">Trước → Sau đào tạo</div><div style="font-size:20px;font-weight:800;color:var(--navy)">'+(d.pretest_avg==null?'—':d.pretest_avg+'%')+' → '+(d.posttest_avg==null?'—':d.posttest_avg+'%')+'</div><div style="font-size:13px;font-weight:800;color:'+ic+'">'+(imp==null?'':((imp>=0?'+':'')+imp+' điểm'))+'</div></div>';}
+  ov+='</div>';
+  var skHtml=skills.length?skills.map(function(s){return '<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:3px"><span>'+pdot(s.percent)+' '+esc(s.competency)+'</span><b>'+Math.round(s.percent||0)+'% <span style="color:var(--muted);font-weight:600">/ '+Math.round(s.target||0)+'%</span></b></div><div style="height:8px;background:#eef1f7;border-radius:6px;overflow:hidden"><i style="display:block;height:100%;width:'+Math.round(s.percent||0)+'%;background:'+dcColor(s.percent)+'"></i></div></div>';}).join(''):'<div class="empty">Chưa có dữ liệu năng lực (chưa làm bài kiểm tra gắn năng lực).</div>';
+  var strengths=skills.filter(function(s){return (s.percent||0)>=(s.target||80);});
+  if(!strengths.length)strengths=skills.slice().sort(function(a,b){return (b.percent||0)-(a.percent||0);}).slice(0,2);
+  var improves=skills.filter(function(s){return (s.gap||0)>0;}).sort(function(a,b){return (b.gap||0)-(a.gap||0);});
+  var sHtml=strengths.length?strengths.map(function(s){return '<span class="pill" style="background:#e6f5ec;color:#0b6b3a;margin:2px 4px 2px 0;display:inline-block">'+esc(s.competency)+' '+Math.round(s.percent||0)+'%</span>';}).join(''):'—';
+  var iHtml=improves.length?improves.map(function(s){return '<span class="pill" style="background:#fdeaea;color:#b42318;margin:2px 4px 2px 0;display:inline-block">'+esc(s.competency)+' (thiếu '+Math.round(s.gap||0)+'%)</span>';}).join(''):'<span style="color:var(--muted)">Không có khoảng trống đáng kể.</span>';
+  var tHtml=topics.length?'<table><thead><tr><th>Chủ đề</th><th>Điểm</th><th>Mức thiếu</th><th>Đề xuất</th></tr></thead><tbody>'+topics.map(function(t){var col=t.gap_level==='Cao'?'#b42318':t.gap_level==='Trung bình'?'#8a6d00':'#0b6b3a';return '<tr><td>'+esc(t.topic)+'</td><td><b style="color:'+dcColor(t.percent)+'">'+Math.round(t.percent||0)+'%</b></td><td><span style="color:'+col+';font-weight:700">'+esc(t.gap_level)+'</span></td><td style="font-size:12.5px">'+esc(t.recommendation==='Duy trì'?'—':t.recommendation)+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty">Chưa có dữ liệu theo chủ đề.</div>';
+  var recs=[];improves.slice(0,3).forEach(function(s){recs.push('Đào tạo nâng cao: '+s.competency);});topics.filter(function(t){return t.gap_level==='Cao';}).slice(0,3).forEach(function(t){var r='Đào tạo nâng cao: '+t.topic;if(recs.indexOf(r)<0)recs.push(r);});
+  var rHtml=recs.length?recs.map(function(r){return '<span class="pill" style="background:#fff7e6;color:#8a6d00;margin:2px 4px 2px 0;display:inline-block">'+esc(r)+'</span>';}).join(''):'<span style="color:var(--muted)">Duy trì lộ trình hiện tại.</span>';
+  var cHtml=comp.length?comp.map(function(x){return '<span class="pill" style="margin:2px 4px 2px 0;display:inline-block">'+esc(x)+'</span>';}).join(''):'<span style="color:var(--muted)">Chưa hoàn thành khóa nào.</span>';
+  var la=d.last_assessment?new Date(d.last_assessment).toLocaleDateString('vi-VN'):'—';
+  var na=d.next_reassessment?new Date(d.next_reassessment).toLocaleDateString('vi-VN'):'—';
+  var sec=function(t,b){return '<div style="margin-top:14px"><div style="font-weight:800;color:var(--navy);font-size:14px;margin-bottom:6px">'+t+'</div>'+b+'</div>';};
+  return head+ov
+    +sec('Năng lực theo nhóm',skHtml)
+    +sec('Lỗ hổng kiến thức theo chủ đề',tHtml)
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">'+sec('Điểm mạnh',sHtml)+sec('Cần cải thiện',iHtml)+'</div>'
+    +sec('Đề xuất đào tạo tiếp theo',rHtml)
+    +sec('Khóa đã hoàn thành',cHtml)
+    +'<div style="margin-top:14px;display:flex;gap:24px;flex-wrap:wrap;font-size:13px"><div><span style="color:var(--muted)">Lần đánh giá gần nhất:</span> <b>'+la+'</b></div><div><span style="color:var(--muted)">Đánh giá lại kế tiếp:</span> <b>'+na+'</b></div></div>';
+}
+async function openProfileCard(uid){
+  modal('<div class="empty" style="padding:30px">Đang tải hồ sơ…</div>',true);
+  var r=await sb.rpc('learner_profile', uid?{p_user:uid}:{});
+  if(r.error){modal('<button class="x" onclick="closeModal()">×</button><div class="empty" style="padding:20px">Không tải được hồ sơ.<br><span style="font-size:12px">'+esc(r.error.message||'')+'</span></div>',true);return;}
+  window._prof=r.data;
+  modal('<button class="x" onclick="closeModal()">×</button>'+profileHTML(r.data,false)
+    +'<div style="text-align:right;margin-top:16px"><button class="btn btn-ghost" onclick="closeModal()">Đóng</button> <button class="btn btn-gold" onclick="printProfilePDF()">🖨️ Xuất PDF</button></div>',true);
+}
+function printProfilePDF(){var d=window._prof;if(!d)return;var nm=(d.identity&&d.identity.name)||'';openPrint('Ho so nang luc - '+nm, repHeader('HỒ SƠ NĂNG LỰC', nm+((d.identity&&d.identity.position)?' · '+d.identity.position:''))+profileHTML(d,true));}
+
+/* ---------- BÁO CÁO HIỆU QUẢ ĐÀO TẠO (P0-4) ---------- */
+function effectivenessHTML(d,forPrint){
+  d=d||{}; var topics=d.topics||[], sg=d.skill_gaps||[], sup=d.needing_support||[];
+  var imp=d.improvement, ic=(imp==null)?'#6b7a99':(imp>=0?'#0b6b3a':'#b42318');
+  var head=forPrint?'':'<h3 style="margin:0 0 2px">Hiệu quả đào tạo</h3><div style="font-weight:800;color:var(--navy);font-size:17px;margin-bottom:10px">'+esc(d.course_name||'')+'</div>';
+  var kpi=function(l,v,c){return '<div class="kpi"><b'+(c?' style="color:'+c+'"':'')+'>'+v+'</b><span>'+l+'</span></div>';};
+  var kpis='<div class="kpis">'+kpi('Học viên tham gia',d.participants||0,'')+kpi('Tỷ lệ hoàn thành',(d.completion_rate||0)+'%',dcColor(d.completion_rate))+kpi('Tỷ lệ đạt',(d.pass_rate||0)+'%',dcColor(d.pass_rate))+kpi('Cải thiện',(imp==null?'—':((imp>=0?'+':'')+imp+' điểm')),ic)+'</div>';
+  var pp=(d.pretest_avg!=null||d.posttest_avg!=null)?'<div style="margin:10px 0;font-size:14px">Trước đào tạo <b>'+(d.pretest_avg==null?'—':d.pretest_avg+'%')+'</b> → Sau đào tạo <b>'+(d.posttest_avg==null?'—':d.posttest_avg+'%')+'</b></div>':'<div class="empty" style="margin:10px 0">Chưa có bài Đầu vào/Đầu ra cho khóa này — chưa đo được mức cải thiện.</div>';
+  var tHtml=topics.length?'<table><thead><tr><th>Chủ đề</th><th>Điểm</th><th>Mức thiếu</th></tr></thead><tbody>'+topics.map(function(t){return '<tr><td>'+esc(t.topic)+'</td><td><b style="color:'+dcColor(t.percent)+'">'+Math.round(t.percent||0)+'%</b></td><td>'+esc(t.gap_level)+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty">Chưa có dữ liệu chủ đề.</div>';
+  var gHtml=sg.length?sg.map(function(s){return '<span class="pill" style="background:#fdeaea;color:#b42318;margin:2px 4px 2px 0;display:inline-block">'+esc(s.competency)+' (thiếu '+Math.round(s.gap||0)+'%)</span>';}).join(''):'<span style="color:var(--muted)">Không có khoảng trống năng lực đáng kể.</span>';
+  var supHtml=sup.length?sup.map(function(s){return '<div onclick="openProfileCard(\''+s.user_id+'\')" style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer"><span>'+esc(s.name||'')+'</span><b style="color:'+dcColor(s.percent)+'">'+Math.round(s.percent||0)+'%</b></div>';}).join(''):'<div class="empty">Không có ai dưới ngưỡng.</div>';
+  var recs=[];sg.slice(0,3).forEach(function(s){recs.push('Đào tạo nâng cao: '+s.competency);});topics.filter(function(t){return t.gap_level==='Cao';}).slice(0,3).forEach(function(t){var r='Đào tạo nâng cao: '+t.topic;if(recs.indexOf(r)<0)recs.push(r);});
+  var rHtml=recs.length?recs.map(function(r){return '<span class="pill" style="background:#fff7e6;color:#8a6d00;margin:2px 4px 2px 0;display:inline-block">'+esc(r)+'</span>';}).join(''):'<span style="color:var(--muted)">Duy trì chương trình hiện tại.</span>';
+  var sec=function(t,b){return '<div style="margin-top:14px"><div style="font-weight:800;color:var(--navy);font-size:14px;margin-bottom:6px">'+t+'</div>'+b+'</div>';};
+  return head+kpis+pp+sec('Kết quả theo chủ đề',tHtml)+sec('Khoảng trống năng lực',gHtml)+sec('Học viên cần đào tạo thêm',supHtml)+sec('Đề xuất khóa đào tạo tiếp theo',rHtml);
+}
+async function openEffectiveness(courseId){
+  if(!courseId){toast('Bài chưa gắn khóa học — hãy chọn khóa cho bài kiểm tra trước.');return;}
+  modal('<div class="empty" style="padding:30px">Đang tổng hợp hiệu quả đào tạo…</div>',true);
+  var r=await sb.rpc('training_effectiveness',{p_course:courseId});
+  if(r.error){modal('<button class="x" onclick="closeModal()">×</button><div class="empty" style="padding:20px">Không tải được báo cáo.<br><span style="font-size:12px">'+esc(r.error.message||'')+'</span></div>',true);return;}
+  window._eff=r.data;
+  modal('<button class="x" onclick="closeModal()">×</button>'+effectivenessHTML(r.data,false)
+    +'<div style="text-align:right;margin-top:16px"><button class="btn btn-ghost" onclick="closeModal()">Đóng</button> <button class="btn btn-gold" onclick="printEffPDF()">🖨️ Xuất PDF</button></div>',true);
+}
+function printEffPDF(){var d=window._eff;if(!d)return;openPrint('Hieu qua dao tao - '+(d.course_name||''), repHeader('BÁO CÁO HIỆU QUẢ ĐÀO TẠO', d.course_name||'')+effectivenessHTML(d,true));}
 
 /* ---------- GỘP NĂNG LỰC + LỘ TRÌNH ---------- */
 /* Gộp competency_breakdown của nhiều bài thành hồ sơ năng lực chung
