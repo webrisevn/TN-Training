@@ -1,0 +1,124 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Khảo sát mức độ sẵn sàng AI</title>
+<style>
+:root{--navy:#012463;--navy2:#0a1b4d;--gold:#F2B84B;--gold2:#d99b2b;--ink:#16233f;--muted:#6b7a99;--line:#e6eaf2;--green:#0b6b3a}
+*{box-sizing:border-box}html,body{margin:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#eef1f7;color:var(--ink);min-height:100dvh}
+.wrap{max-width:640px;margin:0 auto;padding:0 0 90px}
+.top{background:var(--navy);color:#fff;padding:20px 18px;border-radius:0 0 18px 18px}
+.top h1{margin:0;font-size:19px;font-weight:800}
+.top p{margin:8px 0 0;font-size:13.5px;color:#c7d0ea;line-height:1.6}
+.card{background:#fff;border-radius:16px;box-shadow:0 8px 26px rgba(0,0,0,.08);margin:16px 14px;padding:18px}
+.fl{display:block;font-size:13px;font-weight:700;color:var(--navy);margin:12px 0 5px}
+.input{width:100%;border:1.5px solid var(--line);border-radius:10px;padding:12px;font-size:15px;font-family:inherit}
+.btn{border:none;border-radius:12px;padding:14px;font-weight:800;font-size:16px;cursor:pointer;width:100%}
+.btn-primary{background:var(--gold);color:var(--navy)}
+.q{border-top:1px solid var(--line);padding:16px 0}
+.q:first-child{border-top:none}
+.q .dim{display:inline-block;font-size:11px;font-weight:800;color:var(--gold2);background:#fff7e6;border-radius:99px;padding:3px 9px;margin-bottom:7px}
+.q .qt{font-weight:700;font-size:15.5px;line-height:1.5;margin-bottom:12px}
+.scale{display:flex;justify-content:space-between;gap:6px}
+.opt{flex:1;text-align:center}
+.opt button{width:100%;aspect-ratio:1;border:2px solid var(--line);background:#fff;border-radius:12px;font-size:16px;font-weight:800;color:var(--navy);cursor:pointer;transition:.12s}
+.opt button.sel{background:var(--navy);color:#fff;border-color:var(--navy);transform:scale(1.05)}
+.scale-lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:6px}
+.foot{position:fixed;bottom:0;left:0;width:100%;background:#fff;border-top:1px solid var(--line);padding:12px 14px;max-width:640px;left:50%;transform:translateX(-50%)}
+.center{text-align:center;padding:40px 20px}
+.big{font-size:60px}
+.hidden{display:none}
+.err{color:#b42318;font-size:13px;margin-top:8px}
+.prog{font-size:12px;color:var(--muted);text-align:center;margin-top:8px}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="top"><h1 id="sTitle">Khảo sát mức độ sẵn sàng AI</h1><p id="sIntro"></p></div>
+
+  <div id="scr-start" class="card hidden">
+    <div style="font-weight:800;color:var(--navy);font-size:16px;margin-bottom:4px">Thông tin của bạn</div>
+    <div style="color:var(--muted);font-size:13px">Khảo sát ẩn danh — chỉ dùng để tổng hợp và thiết kế đào tạo phù hợp.</div>
+    <label class="fl">Họ tên (không bắt buộc)</label><input class="input" id="fName" placeholder="Có thể để trống"/>
+    <div id="wrapDept"><label class="fl">Phòng ban</label><input class="input" id="fDept" placeholder="VD: Kinh doanh"/></div>
+    <div id="wrapPos"><label class="fl">Chức vụ</label><input class="input" id="fPos" placeholder="VD: Nhân viên"/></div>
+    <label class="fl">Số điện thoại (không bắt buộc)</label><input class="input" id="fPhone" inputmode="tel"/>
+    <div class="err hidden" id="startErr"></div>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="startSurvey()">Bắt đầu khảo sát →</button>
+  </div>
+
+  <div id="scr-q" class="card hidden"><div id="qList"></div></div>
+
+  <div id="scr-done" class="card hidden center">
+    <div class="big">🎉</div>
+    <div style="font-size:20px;font-weight:800;color:var(--navy);margin-top:8px">Cảm ơn bạn!</div>
+    <div style="color:var(--muted);margin-top:8px;line-height:1.6">Câu trả lời của bạn đã được ghi nhận. Kết quả tổng hợp sẽ giúp thiết kế lộ trình đào tạo phù hợp cho đội ngũ.</div>
+  </div>
+
+  <div id="scr-load" class="card center"><div style="color:var(--muted)">Đang tải khảo sát…</div></div>
+  <div id="scr-nofound" class="card center hidden"><div class="big">🔍</div><div style="font-weight:700;margin-top:8px">Không tìm thấy khảo sát</div><div style="color:var(--muted);margin-top:6px">Khảo sát chưa mở hoặc mã QR không đúng.</div></div>
+</div>
+
+<div class="foot hidden" id="footBar">
+  <button class="btn btn-primary" id="submitBtn" onclick="submitSurvey()">Gửi khảo sát</button>
+  <div class="prog" id="prog"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL="https://cunekfbevuenyxkygvlf.supabase.co";
+const SUPABASE_KEY="sb_publishable_b3yrW3nEzamaw32Zf2PUVg_d_H9J1lX";
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const LIKERT=['Rất không đồng ý','Không đồng ý','Trung lập','Đồng ý','Rất đồng ý'];
+var SURVEY=null, ANS={};
+function slug(){const u=new URL(location.href);return u.searchParams.get('s')||u.searchParams.get('slug')||'';}
+function show(id){['scr-start','scr-q','scr-done','scr-load','scr-nofound'].forEach(function(x){document.getElementById(x).classList.toggle('hidden',x!==id);});}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+async function boot(){
+  var sl=slug(); if(!sl){show('scr-nofound');return;}
+  var r=await sb.rpc('get_survey_public',{p_qr:sl});
+  if(r.error||!r.data){show('scr-nofound');return;}
+  SURVEY=r.data;
+  document.getElementById('sTitle').textContent=SURVEY.title||'Khảo sát mức độ sẵn sàng AI';
+  document.getElementById('sIntro').textContent=SURVEY.intro||'Khảo sát ngắn 10 câu — không có đúng/sai, giúp thiết kế đào tạo phù hợp.';
+  document.getElementById('wrapDept').style.display=SURVEY.require_department?'':'none';
+  document.getElementById('wrapPos').style.display=SURVEY.require_position?'':'none';
+  show('scr-start');
+}
+function startSurvey(){
+  var err=document.getElementById('startErr'); err.classList.add('hidden');
+  if(SURVEY.require_department && !document.getElementById('fDept').value.trim()){err.textContent='Vui lòng nhập Phòng ban.';err.classList.remove('hidden');return;}
+  if(SURVEY.require_position && !document.getElementById('fPos').value.trim()){err.textContent='Vui lòng nhập Chức vụ.';err.classList.remove('hidden');return;}
+  renderQ(); show('scr-q'); document.getElementById('footBar').classList.remove('hidden'); updProg(); window.scrollTo(0,0);
+}
+function renderQ(){
+  var qs=SURVEY.questions||[];
+  document.getElementById('qList').innerHTML=qs.map(function(q,i){
+    var opts=[1,2,3,4,5].map(function(n){return '<div class="opt"><button id="o_'+q.id+'_'+n+'" onclick="pick(\''+q.id+'\','+n+')">'+n+'</button></div>';}).join('');
+    return '<div class="q">'+(q.dimension?'<span class="dim">'+esc(q.dimension)+'</span>':'')
+      +'<div class="qt">'+(i+1)+'. '+esc(q.question_text)+'</div>'
+      +'<div class="scale">'+opts+'</div>'
+      +'<div class="scale-lbl"><span>'+LIKERT[0]+'</span><span>'+LIKERT[4]+'</span></div></div>';
+  }).join('');
+}
+function pick(qid,n){
+  ANS[qid]=n;
+  for(var k=1;k<=5;k++){var el=document.getElementById('o_'+qid+'_'+k);if(el)el.classList.toggle('sel',k===n);}
+  updProg();
+}
+function updProg(){
+  var qs=SURVEY.questions||[]; var done=qs.filter(function(q){return ANS[q.id];}).length;
+  document.getElementById('prog').textContent=done+' / '+qs.length+' câu';
+  document.getElementById('submitBtn').textContent=done>=qs.length?'Gửi khảo sát':('Còn '+(qs.length-done)+' câu chưa trả lời');
+}
+async function submitSurvey(){
+  var qs=SURVEY.questions||[]; var miss=qs.filter(function(q){return !ANS[q.id];});
+  if(miss.length){ var first=document.querySelector('.q'); alert('Vui lòng trả lời hết '+qs.length+' câu ('+miss.length+' câu còn thiếu).'); return; }
+  var btn=document.getElementById('submitBtn'); btn.disabled=true; btn.textContent='Đang gửi…';
+  var r=await sb.rpc('submit_survey',{p_qr:slug(),p_name:document.getElementById('fName').value.trim(),
+    p_dept:document.getElementById('fDept').value.trim(),p_position:document.getElementById('fPos').value.trim(),
+    p_phone:document.getElementById('fPhone').value.trim(),p_answers:ANS});
+  if(r.error||(r.data&&r.data.error)){btn.disabled=false;updProg();alert('Lỗi gửi: '+((r.error&&r.error.message)||(r.data&&r.data.error)||'thử lại'));return;}
+  document.getElementById('footBar').classList.add('hidden'); show('scr-done'); window.scrollTo(0,0);
+}
+boot();
+</script>
+</body></html>

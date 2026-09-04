@@ -228,6 +228,7 @@ tr:hover td{background:#fafbff}
       <a data-v="learners">👥 Học viên</a>
       <a data-v="bank">🗂️ Ngân hàng câu hỏi</a>
       <a data-v="setup">🏢 Khoa &amp; Khóa học</a>
+      <a data-v="surveys" id="navSurveys" style="display:none">📋 Khảo sát</a>
       <a data-v="mycourses" id="navMyCourses" style="display:none">📚 Khóa học của tôi</a>
       <a data-v="mylearning" id="navLearn" style="display:none">🎓 Học tập</a>
       <a data-v="myskills" id="navSkills" style="display:none">🎯 Hồ sơ kỹ năng</a>
@@ -313,6 +314,16 @@ tr:hover td{background:#fafbff}
       </div>
       <div class="card" style="margin-top:12px"><b>🎯 Mục tiêu kỹ năng</b><div id="skTargetBox" style="margin-top:8px"></div></div>
     </section>
+    <section id="v-surveys" class="hidden">
+      <div class="head"><h2>📋 Khảo sát mức độ sẵn sàng AI</h2></div>
+      <div class="card">
+        <b>Tạo khảo sát mới</b>
+        <div class="row" style="margin-top:8px"><input class="input" id="svTitle" placeholder="Tên khảo sát (VD: Khảo sát sẵn sàng AI — MT Group)"/></div>
+        <textarea class="input" id="svIntro" placeholder="Lời giới thiệu ngắn (tùy chọn)" style="margin-top:8px;min-height:56px"></textarea>
+        <button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="createSurvey()">＋ Tạo khảo sát</button>
+      </div>
+      <div class="card"><div id="surveyList"></div></div>
+    </section>
     <section id="v-mycourses" class="hidden">
       <div class="head"><h2>📚 Khóa học của tôi</h2><button class="btn btn-gold" onclick="openCreateCourse()">＋ Tạo khóa học</button></div>
       <div class="card"><div id="mcFilter" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap"></div><div id="mcList"></div></div>
@@ -363,7 +374,7 @@ const LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAYAAAB5fY51AA
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 ["loginLogo","sideLogo"].forEach(id=>document.getElementById(id).src=LOGO);
 let ORG=null, ME=null, ROLE='admin';
-let DEPTS=[], COURSES=[], COMPS=[], BANK=[], ASSESS=[], ACCESS=[], PROFILES=[];
+let DEPTS=[], COURSES=[], COMPS=[], BANK=[], ASSESS=[], ACCESS=[], PROFILES=[], SURVEYS=[];
 const ROLE_LABEL={admin:'Admin',trainer:'Trainer',manager:'Manager',learner:'Học viên',training_manager:'Training Manager'};
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
@@ -419,15 +430,15 @@ sb.auth.getSession().then(({data})=>{if(data.session)afterLogin();});
 /* ---------- NAV ---------- */
 function nav(v){
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-   ['dash','assess','learners','bank','setup','admin','mycourses','mylearning','myskills','myprofile','mycerts'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
-   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='admin')renderAdmin(); if(v==='mycourses')renderMyCourses(); if(v==='mylearning')renderMyLearning(); if(v==='myskills')renderMySkills(); if(v==='myprofile')renderMyProfile(); if(v==='mycerts')renderMyCerts();
+   ['dash','assess','learners','bank','setup','surveys','admin','mycourses','mylearning','myskills','myprofile','mycerts'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
+   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='surveys')renderSurveys(); if(v==='admin')renderAdmin(); if(v==='mycourses')renderMyCourses(); if(v==='mylearning')renderMyLearning(); if(v==='myskills')renderMySkills(); if(v==='myprofile')renderMyProfile(); if(v==='mycerts')renderMyCerts();
 }
 document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>nav(a.dataset.v));
 /* ---------- RBAC (Phase 1) ---------- */
 function applyRole(){
   function show(v,c){var el=document.querySelector('#nav a[data-v="'+v+'"]'); if(el) el.style.display=c?'':'none';}
   var staff=(ROLE==='admin'||ROLE==='trainer'||ROLE==='manager');
-  show('dash',staff); show('assess',staff); show('learners',staff); show('bank',staff); show('setup',staff);
+  show('dash',staff); show('assess',staff); show('learners',staff); show('bank',staff); show('setup',staff); show('surveys',staff);
   show('mycourses', ROLE==='admin'||ROLE==='trainer');
   show('admin', ROLE==='admin');
   show('mylearning', ROLE==='learner');
@@ -1490,6 +1501,97 @@ async function runImport(){
     (updN>0?'\n\nLưu ý: có '+updN+' dòng trùng Question ID nên bị GỘP. Nếu là các câu KHÁC nhau, hãy đặt Question ID khác nhau cho từng câu.':''));
 }
 
+/* ---------- KHẢO SÁT (AI Readiness Survey) ---------- */
+var SURVEY_DEFAULT=[
+ ['Nhận thức về AI','Tôi hiểu AI là gì và có thể ứng dụng vào công việc của mình.'],
+ ['Nhận thức về AI','Tôi nắm được cơ hội và rủi ro khi dùng AI trong công việc.'],
+ ['Kỹ năng dùng công cụ','Tôi đã sử dụng các công cụ AI (ChatGPT, Gemini…) cho công việc.'],
+ ['Kỹ năng dùng công cụ','Tôi biết cách viết yêu cầu (prompt) để nhận kết quả tốt từ công cụ.'],
+ ['Dữ liệu & phân tích','Tôi thường dùng dữ liệu/số liệu để ra quyết định trong công việc.'],
+ ['Dữ liệu & phân tích','Tôi biết cách kiểm tra độ tin cậy của thông tin/dữ liệu.'],
+ ['Thái độ & sẵn sàng','Tôi sẵn sàng thay đổi cách làm việc để áp dụng công nghệ mới.'],
+ ['Thái độ & sẵn sàng','Tôi chủ động học hỏi kỹ năng mới liên quan đến công nghệ.'],
+ ['Ứng dụng thực tế','Tôi đã áp dụng công cụ mới để tiết kiệm thời gian cho ít nhất một công việc.'],
+ ['Ứng dụng thực tế','Tôi có thể hướng dẫn đồng nghiệp dùng một công cụ đơn giản.']
+];
+function surveyURL(s){return PARTICIPANT_BASE_URL.replace('index.html','survey.html')+'?s='+s.qr_slug;}
+async function renderSurveys(){
+  var r=await sb.from('surveys').select('*').eq('org_id',ORG.id).order('created_at',{ascending:false});
+  SURVEYS=r.data||[];
+  var box=document.getElementById('surveyList');
+  if(!SURVEYS.length){box.innerHTML='<div class="empty">Chưa có khảo sát. Tạo mới ở trên.</div>';return;}
+  var ids=SURVEYS.map(function(s){return s.id;});
+  var qc=await sb.from('survey_questions').select('survey_id').in('survey_id',ids);
+  var rc=await sb.from('survey_responses').select('survey_id').in('survey_id',ids);
+  var qn={},rn={}; (qc.data||[]).forEach(function(x){qn[x.survey_id]=(qn[x.survey_id]||0)+1;}); (rc.data||[]).forEach(function(x){rn[x.survey_id]=(rn[x.survey_id]||0)+1;});
+  box.innerHTML='<table><thead><tr><th>Khảo sát</th><th>Câu</th><th>Phản hồi</th><th>Trạng thái</th><th></th></tr></thead><tbody>'
+   +SURVEYS.map(function(s){var qcnt=qn[s.id]||0;
+     return '<tr><td><b>'+esc(s.title)+'</b></td><td>'+qcnt+'</td><td><b>'+(rn[s.id]||0)+'</b></td><td><span class="tag st-'+s.status+'">'+s.status+'</span></td>'
+      +'<td class="actions">'
+      +(qcnt===0?'<button class="btn btn-navy btn-sm" onclick="genDefaultQuestions(\''+s.id+'\')">🧩 Tạo 10 câu mặc định</button>':'<button class="btn btn-ghost btn-sm" onclick="editSurveyQ(\''+s.id+'\')">Sửa câu hỏi</button>')
+      +(s.status==='published'?'<button class="btn btn-ghost btn-sm" onclick="setSurveyStatus(\''+s.id+'\',\'closed\')">Đóng</button>':'<button class="btn btn-gold btn-sm" onclick="setSurveyStatus(\''+s.id+'\',\'published\')">Publish</button>')
+      +'<button class="btn btn-navy btn-sm" onclick="surveyQR(\''+s.id+'\')">QR</button>'
+      +'<button class="btn btn-ghost btn-sm" onclick="surveyDashboard(\''+s.id+'\')">📊 Dashboard</button>'
+      +'<button class="btn btn-danger btn-sm" onclick="delSurvey(\''+s.id+'\')">🗑</button>'
+      +'</td></tr>';
+   }).join('')+'</tbody></table>';
+}
+async function createSurvey(){
+  var t=document.getElementById('svTitle').value.trim(); if(!t)return toast('Nhập tên khảo sát');
+  var sl=slugify(t)+'-'+Math.random().toString(36).slice(2,6);
+  var r=await sb.from('surveys').insert({org_id:ORG.id,title:t,intro:document.getElementById('svIntro').value.trim()||null,qr_slug:sl,status:'draft',created_by:ME.id}).select().single();
+  if(r.error)return toast('Lỗi: '+r.error.message);
+  document.getElementById('svTitle').value='';document.getElementById('svIntro').value='';
+  toast('Đã tạo khảo sát'); renderSurveys();
+}
+async function genDefaultQuestions(sid){
+  var rows=SURVEY_DEFAULT.map(function(x,i){return {survey_id:sid,order_index:i,dimension:x[0],question_text:x[1],qtype:'likert5'};});
+  var r=await sb.from('survey_questions').insert(rows);
+  if(r.error)return toast('Lỗi: '+r.error.message);
+  toast('Đã tạo 10 câu mặc định'); renderSurveys();
+}
+async function editSurveyQ(sid){
+  var r=await sb.from('survey_questions').select('*').eq('survey_id',sid).order('order_index'); var qs=r.data||[];
+  window._svQIds=qs.map(function(q){return q.id;});
+  var rows=qs.map(function(q){return '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px">'
+    +'<input class="input" id="sq_dim_'+q.id+'" value="'+esc(q.dimension||'')+'" placeholder="Chiều năng lực" style="font-size:12px;margin-bottom:4px"/>'
+    +'<textarea class="input" id="sq_txt_'+q.id+'" style="min-height:44px">'+esc(q.question_text||'')+'</textarea>'
+    +'<div style="text-align:right;margin-top:4px"><button class="btn btn-danger btn-sm" onclick="delSurveyQ(\''+q.id+'\',\''+sid+'\')">Xóa</button></div></div>';}).join('');
+  modal('<button class="x" onclick="closeModal()">×</button><h3>Sửa câu hỏi khảo sát</h3>'
+   +'<div style="max-height:56vh;overflow:auto">'+(rows||'<div class="empty">Chưa có câu hỏi.</div>')+'</div>'
+   +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="addSurveyQ(\''+sid+'\')">＋ Thêm câu</button>'
+   +'<button class="btn btn-gold btn-sm" style="flex:1;justify-content:center" onclick="saveSurveyQ(\''+sid+'\')">Lưu tất cả</button></div>',true);
+}
+async function addSurveyQ(sid){
+  var ex=await sb.from('survey_questions').select('order_index').eq('survey_id',sid).order('order_index',{ascending:false}).limit(1);
+  var base=(ex.data&&ex.data[0]&&ex.data[0].order_index)||0;
+  await sb.from('survey_questions').insert({survey_id:sid,order_index:base+1,dimension:'',question_text:'Câu hỏi mới',qtype:'likert5'});
+  editSurveyQ(sid);
+}
+async function delSurveyQ(qid,sid){ await sb.from('survey_questions').delete().eq('id',qid); editSurveyQ(sid); }
+async function saveSurveyQ(sid){
+  var ids=(window._svQIds||[]);
+  for(var i=0;i<ids.length;i++){var id=ids[i];var t=document.getElementById('sq_txt_'+id);var d=document.getElementById('sq_dim_'+id);if(t)await sb.from('survey_questions').update({question_text:t.value.trim(),dimension:(d&&d.value.trim())||null}).eq('id',id);}
+  closeModal(); toast('Đã lưu câu hỏi'); renderSurveys();
+}
+async function setSurveyStatus(sid,st){
+  if(st==='published'){var qc=await sb.from('survey_questions').select('id').eq('survey_id',sid).limit(1); if(!qc.data||!qc.data.length)return toast('Cần tạo câu hỏi trước khi publish.');}
+  var r=await sb.from('surveys').update({status:st}).eq('id',sid);
+  if(r.error)return toast('Lỗi: '+r.error.message);
+  toast(st==='published'?'Đã publish khảo sát':'Đã đóng khảo sát'); renderSurveys();
+}
+async function delSurvey(sid){ if(!confirm('Xóa khảo sát này? (xóa cả câu hỏi và phản hồi)'))return; await sb.from('surveys').delete().eq('id',sid); toast('Đã xóa'); renderSurveys(); }
+function surveyQR(sid){
+  var s=SURVEYS.find(function(x){return x.id===sid;}); if(!s)return;
+  var url=surveyURL(s);
+  modal('<button class="x" onclick="closeModal()">×</button><h3>QR khảo sát — '+esc(s.title)+'</h3>'
+   +'<div class="qrbox"><div id="svQrHolder"></div>'
+   +'<div class="linkbox"><input class="input" id="svQrUrl" value="'+esc(url)+'" readonly/><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById(\'svQrUrl\').value);toast(\'Đã copy link\')">Copy</button></div>'
+   +(s.status!=='published'?'<div class="note">Khảo sát đang <b>'+s.status+'</b> — Publish để QR dùng được.</div>':'<div class="note" style="background:#e9f7ef;border-color:#bfe6cd;color:#177a45">✓ Đã publish — QR dùng được ngay.</div>')
+   +'</div>');
+  var cv=qrCanvas(url,240);cv.style.width='240px';cv.style.height='240px';document.getElementById('svQrHolder').appendChild(cv);
+}
+function surveyDashboard(sid){ toast('Dashboard tổng hợp + lọc + xuất Excel sẽ có ở bước tiếp theo (S3). Số phản hồi đang hiển thị ở cột "Phản hồi".'); }
 /* ---------- ASSESSMENTS ---------- */
 function tableAssess(list){
   return `<table><thead><tr><th>Tiêu đề</th><th>Khóa</th><th>Số câu</th><th>Trạng thái</th><th></th></tr></thead><tbody>`+
