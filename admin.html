@@ -801,19 +801,54 @@ async function openLessonEditor(lessonId,courseId){
     +'<button class="btn btn-ghost btn-sm" onclick="addBlock(\''+lessonId+'\',\''+courseId+'\')">＋ Thêm block</button>'
     +'<button class="btn btn-navy btn-sm" onclick="closeModal();openPresent(\''+lessonId+'\',\''+courseId+'\')">▶ Trình chiếu</button>'
     +'<button class="btn btn-navy btn-sm" onclick="setLessonStatus(\''+lessonId+'\',\'approved\',\''+courseId+'\')">✓ Duyệt</button>'
-    +'<button class="btn btn-gold btn-sm" onclick="setLessonStatus(\''+lessonId+'\',\'published\',\''+courseId+'\')">🚀 Publish</button>'
+    +'<button class="btn btn-gold btn-sm" onclick="publishLesson(\''+lessonId+'\',\''+courseId+'\')">🚀 Publish</button>'
     +(l.status==='published'?'<button class="btn btn-ghost btn-sm" onclick="setLessonStatus(\''+lessonId+'\',\'draft\',\''+courseId+'\')">Về nháp</button>':'')+'</div>') : '';
   modal('<button class="x" onclick="closeModal()">×</button><h3>📝 '+esc(l.title)+' <span class="pill" style="background:#64748b;color:#fff;font-size:11px">'+esc(l.status)+'</span></h3>'
    +(l.objective?'<div style="color:#7a869a;font-size:13px;margin-bottom:8px">🎯 '+esc(l.objective)+'</div>':'')
    +ctrls+'<div id="leBlocks">Đang tải...</div>', true);
   renderLessonBlocks(lessonId,courseId);
 }
+var QGATE=[
+  ['objective','Mục tiêu bài học',function(t){return t['objective'];},true],
+  ['hook','Mở đầu thu hút (Hook)',function(t){return t['hook'];},true],
+  ['learn','Nội dung học (khái niệm/ví dụ/tình huống)',function(t){return t['concept']||t['example']||t['case'];},true],
+  ['visual','Trực quan (sơ đồ/bảng/hình ảnh)',function(t){return t['visual']||t['visual_diagram']||t['visual_matrix']||t['visual_steps'];},false],
+  ['interact','Câu hỏi tương tác',function(t){return t['interactive_question'];},true],
+  ['practice','Thực hành',function(t){return t['practice'];},true],
+  ['assess','Câu đánh giá',function(t){return t['interactive_question']||t['assessment'];},false],
+  ['summary','Tóm tắt',function(t){return t['summary'];},false]
+];
+function lessonQuality(blocks){
+  var t={}; (blocks||[]).forEach(function(b){t[b.block_type]=(t[b.block_type]||0)+1;});
+  var items=QGATE.map(function(g){return {key:g[0],label:g[1],ok:!!g[2](t),req:!!g[3]};});
+  var missing=items.filter(function(i){return i.req&&!i.ok;});
+  return {items:items,missing:missing,ok:missing.length===0};
+}
+function qualityPanelHTML(blocks){
+  var q=lessonQuality(blocks);
+  return '<div style="border:1px solid '+(q.ok?'#bfe6cd':'#f3d08a')+';background:'+(q.ok?'#e9f7ef':'#fffdf3')+';border-radius:10px;padding:10px 12px;margin-bottom:10px">'
+   +'<b style="font-size:13px;color:'+(q.ok?'#0b6b3a':'#8a5a00')+'">'+(q.ok?'✓ Bài giảng đủ chuẩn để publish':'⚠ Chất lượng bài giảng — còn thiếu thành phần bắt buộc')+'</b>'
+   +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">'+q.items.map(function(i){var col=i.ok?'#0b6b3a':(i.req?'#b42318':'#7a869a');return '<span class="pill" style="background:'+(i.ok?'#e9f7ef':'#f4f7fc')+';color:'+col+';border:1px solid '+(i.ok?'#bfe6cd':'#e5e9f0')+'">'+(i.ok?'✓':(i.req?'✕':'○'))+' '+esc(i.label)+'</span>';}).join('')+'</div>'
+   +(q.ok?'':'<div style="color:#7a869a;font-size:11.5px;margin-top:6px">Mục đỏ ✕ là bắt buộc; ○ là khuyến nghị. Có thể bấm 🤖 AI tạo nội dung để bổ sung.</div>')+'</div>';
+}
+async function publishLesson(lessonId,courseId){
+  var r=await sb.from('lesson_blocks').select('block_type').eq('lesson_id',lessonId); var bs=r.data||[];
+  var q=lessonQuality(bs);
+  if(q.ok){ return setLessonStatus(lessonId,'published',courseId); }
+  var miss=q.missing.map(function(m){return '<li>'+esc(m.label)+'</li>';}).join('');
+  modal('<button class="x" onclick="closeModal()">×</button><h3>⚠ Bài giảng còn thiếu thành phần</h3>'
+   +'<div style="color:#31405f">Nên có đủ các thành phần bắt buộc trước khi publish để đảm bảo trải nghiệm học. Còn thiếu:</div>'
+   +'<ul style="color:#b42318;margin:8px 0">'+miss+'</ul>'
+   +'<div style="color:#7a869a;font-size:13px">Bạn có thể đóng lại để bổ sung (hoặc bấm 🤖 AI tạo nội dung), hoặc vẫn publish nếu chấp nhận.</div>'
+   +'<div style="text-align:right;margin-top:12px"><button class="btn btn-ghost" onclick="closeModal()">Đóng để bổ sung</button> <button class="btn btn-gold" onclick="closeModal();setLessonStatus(\''+lessonId+'\',\'published\',\''+courseId+'\')">Vẫn publish</button></div>');
+}
 async function renderLessonBlocks(lessonId,courseId){
   var box=document.getElementById('leBlocks'); if(!box)return;
   var c=COURSES.find(function(x){return x.id===courseId;}); var own=c&&(c.owner_id===ME.id||ROLE==='admin');
   var r=await sb.from('lesson_blocks').select('*').eq('lesson_id',lessonId).order('order_index'); var bs=r.data||[];
-  if(!bs.length){box.innerHTML='<div class="empty">Chưa có nội dung. Bấm 🤖 AI tạo nội dung, hoặc ＋ Thêm block.</div>';return;}
-  box.innerHTML=bs.map(function(b,i){
+  var qp=own?qualityPanelHTML(bs):'';
+  if(!bs.length){box.innerHTML=qp+'<div class="empty">Chưa có nội dung. Bấm 🤖 AI tạo nội dung, hoặc ＋ Thêm block.</div>';return;}
+  box.innerHTML=qp+bs.map(function(b,i){
     var mt=blockMeta(b.block_type);
     return '<div style="border:1px solid var(--line);border-left:4px solid #012463;border-radius:8px;padding:10px;margin-bottom:8px">'
      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="pill" style="background:#eef2f7;color:#012463">'+mt[1]+' '+mt[2]+'</span>'
@@ -1194,8 +1229,16 @@ async function renderMySkills(){
   var r=await sb.rpc('my_skill_profile');
   if(r.error){box.innerHTML='<div class="card"><div class="empty">Không tải được hồ sơ kỹ năng: '+esc(r.error.message)+'</div></div>';return;}
   var p=r.data||{}; var skills=(p.skills||[]);
+  var stats={}; try{var sr=await sb.rpc('my_learning_stats'); stats=sr.data||{};}catch(e){}
+  var _lc=stats.lessons_completed||0,_ap=stats.assessments_passed||0;
+  var _expert=skills.filter(function(s){return s.level==='Chuyên gia';}).length;
+  var _atT=skills.filter(function(s){return (s.gap||0)<=0;}).length;
+  var _pts=_lc*10+_ap*25+_expert*20+_atT*10;
+  var _badges=[]; if(_lc>=1)_badges.push('🧭 Nhà khám phá'); if(_lc>=5)_badges.push('📚 Chăm học'); if(_ap>=1)_badges.push('✅ Vượt ải'); if(_ap>=3)_badges.push('🏅 Nhà vô địch'); if(_expert>=1)_badges.push('🌟 Chuyên gia'); if(skills.length&&_atT===skills.length)_badges.push('🎯 Đạt toàn bộ mục tiêu');
+  var ach='<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px"><div><div style="font-weight:700">🏆 Thành tích</div><div style="color:#7a869a;font-size:12px">'+_lc+' bài học hoàn thành · '+_ap+' bài đánh giá đạt'+(_expert?' · '+_expert+' kỹ năng chuyên gia':'')+'</div></div><div style="text-align:center"><div style="font-size:26px;font-weight:800;color:#d99b2b">⭐ '+_pts+'</div><div style="font-size:11px;color:#7a869a">điểm</div></div></div>'
+   +(_badges.length?'<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">'+_badges.map(function(b){return '<span class="pill" style="background:linear-gradient(135deg,#fff4d6,#ffe3a1);border:1px solid #e9c26a;color:#7a5300;font-weight:700">'+esc(b)+'</span>';}).join('')+'</div>':'<div style="margin-top:8px;color:#7a869a;font-size:12px">Hoàn thành bài học & bài đánh giá để mở khóa huy hiệu.</div>')+'</div>';
   if(!skills.length){
-    box.innerHTML='<div class="card"><div class="empty" style="line-height:1.7">Bạn chưa có dữ liệu kỹ năng.<br><span style="color:#7a869a;font-size:13px">Hồ sơ kỹ năng được tạo từ kết quả các bài đánh giá. Hãy hoàn thành một bài kiểm tra — nếu bạn từng làm bài qua mã QR bằng đúng số điện thoại trong hồ sơ, kết quả sẽ tự động được ghi nhận vào đây.</span></div></div>';
+    box.innerHTML=ach+'<div class="card"><div class="empty" style="line-height:1.7">Bạn chưa có dữ liệu kỹ năng.<br><span style="color:#7a869a;font-size:13px">Hồ sơ kỹ năng được tạo từ kết quả các bài đánh giá. Hãy hoàn thành một bài kiểm tra — nếu bạn từng làm bài qua mã QR bằng đúng số điện thoại trong hồ sơ, kết quả sẽ tự động được ghi nhận vào đây.</span></div></div>';
     return;
   }
   var oc=skillColor(p.overall_level);
@@ -1229,7 +1272,7 @@ async function renderMySkills(){
           +'<div style="flex:1;min-width:0"><b>'+esc(s.competency)+'</b> <span style="color:'+rec[1]+';font-size:12px;font-weight:700">('+rec[0]+' · còn thiếu '+s.gap+'%)</span>'
           +'<div style="color:#243356;font-size:13px;margin-top:2px">→ '+esc(course)+'</div></div></div>';
     }).join('')+'</div>'):'';
-  box.innerHTML=header+path+'<div class="card"><div style="font-weight:700;margin-bottom:10px">Chi tiết theo nhóm kỹ năng</div>'+rows+'</div>';
+  box.innerHTML=ach+header+path+'<div class="card"><div style="font-weight:700;margin-bottom:10px">Chi tiết theo nhóm kỹ năng</div>'+rows+'</div>';
 }
 /* ---------- LOAD ---------- */
 async function loadAll(){
