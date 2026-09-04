@@ -232,6 +232,7 @@ tr:hover td{background:#fafbff}
       <a data-v="mylearning" id="navLearn" style="display:none">🎓 Học tập</a>
       <a data-v="myskills" id="navSkills" style="display:none">🎯 Hồ sơ kỹ năng</a>
       <a data-v="myprofile" id="navProfile" style="display:none">👤 Hồ sơ cá nhân</a>
+      <a data-v="mycerts" id="navCerts" style="display:none">🎖️ Chứng chỉ</a>
       <a data-v="admin" id="navAdmin" style="display:none">⚙️ Quản trị</a>
     </nav>
     <div class="me">
@@ -328,6 +329,10 @@ tr:hover td{background:#fafbff}
       <div class="head"><h2>👤 Hồ sơ cá nhân</h2></div>
       <div class="card" id="mpWrap"></div>
     </section>
+    <section id="v-mycerts" class="hidden">
+      <div class="head"><h2>🎖️ Chứng chỉ của tôi</h2></div>
+      <div class="card" id="mcertWrap"></div>
+    </section>
     <section id="v-admin" class="hidden">
       <div class="head"><h2>⚙️ Quản trị</h2></div>
       <div class="card"><b>📩 Yêu cầu xin quyền xem khóa</b><div id="reqList" style="margin-top:10px"></div></div>
@@ -414,8 +419,8 @@ sb.auth.getSession().then(({data})=>{if(data.session)afterLogin();});
 /* ---------- NAV ---------- */
 function nav(v){
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-   ['dash','assess','learners','bank','setup','admin','mycourses','mylearning','myskills','myprofile'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
-   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='admin')renderAdmin(); if(v==='mycourses')renderMyCourses(); if(v==='mylearning')renderMyLearning(); if(v==='myskills')renderMySkills(); if(v==='myprofile')renderMyProfile();
+   ['dash','assess','learners','bank','setup','admin','mycourses','mylearning','myskills','myprofile','mycerts'].forEach(x=>document.getElementById('v-'+x).classList.toggle('hidden',x!==v));
+   if(v==='dash')renderDash(); if(v==='assess')renderAssess(); if(v==='learners'){LEARNERS=[];renderLearners();} if(v==='bank')renderBank(); if(v==='setup')renderSetup(); if(v==='admin')renderAdmin(); if(v==='mycourses')renderMyCourses(); if(v==='mylearning')renderMyLearning(); if(v==='myskills')renderMySkills(); if(v==='myprofile')renderMyProfile(); if(v==='mycerts')renderMyCerts();
 }
 document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>nav(a.dataset.v));
 /* ---------- RBAC (Phase 1) ---------- */
@@ -428,6 +433,7 @@ function applyRole(){
   show('mylearning', ROLE==='learner');
   show('myskills', ROLE==='learner');
   show('myprofile', ROLE==='learner');
+  show('mycerts', ROLE==='learner');
   var ad=document.getElementById('btnAddDept'); if(ad) ad.style.display=ROLE==='admin'?'':'none';
   var ac=document.getElementById('btnAddCourse'); if(ac) ac.style.display=(ROLE==='admin'||ROLE==='trainer')?'':'none';
 }
@@ -1156,6 +1162,20 @@ async function saveMyProfile(){
   if(r.error){document.getElementById('mpMsg').innerHTML='<span style="color:#b00">Lỗi: '+esc(r.error.message)+'</span>';return;}
   Object.assign(ME,rec); toast('Đã lưu hồ sơ 👤');
 }
+async function renderMyCerts(){
+  var box=document.getElementById('mcertWrap'); if(!box)return;
+  box.innerHTML='<div class="empty">Đang tải…</div>';
+  var r=await sb.from('certificates').select('*').eq('user_id',ME.id).order('issued_at',{ascending:false});
+  if(r.error){box.innerHTML='<div class="empty">Lỗi tải: '+esc(r.error.message)+'</div>';return;}
+  var cs=r.data||[];
+  if(!cs.length){box.innerHTML='<div class="empty">Bạn chưa có chứng chỉ nào. Hoàn thành và ĐẠT bài kiểm tra cuối khóa để được cấp.</div>';return;}
+  box.innerHTML=cs.map(function(c){ window['_cert_'+c.id]=c;
+    return '<div style="border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+     +'<div><b style="font-size:15px">'+esc(c.course_name||'Khóa học')+'</b>'
+     +'<div style="color:#7a869a;font-size:12px;margin-top:2px">Mã: '+esc(c.cert_no||'')+(c.score!=null?' · Điểm: '+c.score:'')+' · Ngày '+(c.issued_at?new Date(c.issued_at).toLocaleDateString('vi-VN'):'')+'</div></div>'
+     +'<button class="btn btn-gold btn-sm" onclick="certPrint(window[\'_cert_'+c.id+'\'])">🖨️ Xem / In chứng chỉ</button></div>';
+  }).join('');
+}
 /* ---------- 3.1 HỒ SƠ KỸ NĂNG (learner) ---------- */
 function skillColor(level){
   if(level==='Chuyên gia')return'#0b6b3a';
@@ -1441,6 +1461,7 @@ function tableAssess(list){
        <button class="btn btn-ghost btn-sm" onclick="openBoard('${a.id}')">📺 Màn chiếu</button>
        <button class="btn btn-ghost btn-sm" onclick="classReport('${a.id}')">📄 Báo cáo lớp</button>
        <button class="btn btn-ghost btn-sm" onclick="results('${a.id}')">Kết quả</button>
+       <button class="btn btn-ghost btn-sm" onclick="openCertIssue('${a.id}')">🎖️ Chứng chỉ</button>
      </td></tr>`}).join('')+`</tbody></table>`;
 }
 function boardURL(slug){return PARTICIPANT_BASE_URL.replace('index.html','board.html')+'?a='+slug;}
@@ -1747,6 +1768,87 @@ async function printClassPDF(aid){
     if(d.data)inner+=repLearner(d.data,false);
   }
   openPrint('BaoCaoLop_'+slugify(a?a.title:'baikiemtra'),inner);
+}
+/* ---------- CHỨNG CHỈ HOÀN THÀNH ---------- */
+async function openCertIssue(aid){
+  var a=ASSESS.find(function(x){return x.id===aid;});
+  var ar=await sb.from('attempts').select('participant_id,participants(full_name,position),assessment_results(percentage,passed)').eq('assessment_id',aid).eq('status','submitted');
+  if(ar.error)return toast('Lỗi tải: '+ar.error.message);
+  var best={};
+  (ar.data||[]).forEach(function(x){var r=(x.assessment_results&&x.assessment_results[0])||{};var pc=+r.percentage||0;var cur=best[x.participant_id];if(!cur||pc>cur.pc){best[x.participant_id]={pid:x.participant_id,name:(x.participants&&x.participants.full_name)||'—',pos:(x.participants&&x.participants.position)||'',pc:pc,passed:!!r.passed};}});
+  var cr=await sb.from('certificates').select('participant_id,cert_no').eq('assessment_id',aid);
+  var issued={}; (cr.data||[]).forEach(function(x){issued[x.participant_id]=x.cert_no;});
+  var list=Object.keys(best).map(function(k){return best[k];}).sort(function(x,y){return y.pc-x.pc;});
+  window._certAid=aid; window._certList=list; window._certIssued=issued;
+  var rows=list.map(function(s){
+    var st=issued[s.pid]?('<span class="tag st-published">Đã cấp</span> <button class="btn btn-ghost btn-sm" onclick="certPrintByPart(\''+s.pid+'\')">🖨️ In</button>')
+       :(s.passed?('<button class="btn btn-gold btn-sm" onclick="issueCert(\''+s.pid+'\')">Cấp</button>'):'<span class="tag st-closed">Chưa đạt</span>');
+    return '<tr><td><b>'+esc(s.name)+'</b></td><td>'+esc(s.pos||'')+'</td><td><b>'+s.pc+'%</b></td><td>'+(s.passed?'Đạt':'Chưa đạt')+'</td><td style="text-align:right">'+st+'</td></tr>';
+  }).join('');
+  var nPass=list.filter(function(s){return s.passed&&!issued[s.pid];}).length;
+  modal('<button class="x" onclick="closeModal()">×</button><h3>🎖️ Cấp chứng chỉ — '+esc(a?a.title:'')+'</h3>'
+   +'<label class="fl">Tên người đào tạo ký nhận</label><input class="input" id="certSigner" value="'+esc(ME.full_name||'')+'"/>'
+   +'<div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0 6px;gap:8px;flex-wrap:wrap"><span style="color:#7a869a;font-size:12px">Chỉ cấp cho học viên ĐẠT. Bấm "In" để xuất chứng chỉ PDF.</span>'
+   +(nPass>0?'<button class="btn btn-gold btn-sm" onclick="issueCertAll()">Cấp cho tất cả đạt ('+nPass+')</button>':'')+'</div>'
+   +'<div style="max-height:52vh;overflow:auto"><table><thead><tr><th>Họ tên</th><th>Chức vụ</th><th>Điểm</th><th>Kết quả</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="empty">Chưa có lượt làm bài.</td></tr>')+'</tbody></table></div>',true);
+}
+async function issueCert(pid){
+  var signer=document.getElementById('certSigner').value;
+  var r=await sb.rpc('issue_certificate',{p_assessment:window._certAid,p_participant:pid,p_signer:signer});
+  var err=r.error||(r.data&&r.data.error);
+  if(err)return toast('Lỗi cấp: '+(err.message||err));
+  toast('Đã cấp chứng chỉ'); openCertIssue(window._certAid);
+}
+async function issueCertAll(){
+  var aid=window._certAid, signer=document.getElementById('certSigner').value;
+  var list=(window._certList||[]).filter(function(s){return s.passed&&!window._certIssued[s.pid];});
+  if(!list.length)return toast('Không có học viên đạt nào cần cấp.');
+  toast('Đang cấp '+list.length+' chứng chỉ…');
+  for(var i=0;i<list.length;i++){ try{ await sb.rpc('issue_certificate',{p_assessment:aid,p_participant:list[i].pid,p_signer:signer}); }catch(e){} }
+  toast('Đã cấp xong'); openCertIssue(aid);
+}
+async function certPrintByPart(pid){
+  var r=await sb.from('certificates').select('*').eq('assessment_id',window._certAid).eq('participant_id',pid).single();
+  if(r.error||!r.data)return toast('Không tải được chứng chỉ');
+  certPrint(r.data);
+}
+function certPrint(c){
+  var w=window.open('','_blank');
+  if(!w){toast('Trình duyệt chặn cửa sổ in — hãy cho phép popup.');return;}
+  w.document.write(certHTML(c)); w.document.close(); w.focus(); setTimeout(function(){try{w.print();}catch(e){}},700);
+}
+function certHTML(c){
+  var org=(ORG&&ORG.name)?ORG.name:'TRACY LEARNING';
+  var logo=(typeof LOGO_INV!=='undefined'&&LOGO_INV)?LOGO_INV:'';
+  var d=c.issued_at?new Date(c.issued_at):new Date();
+  var dateStr=('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear();
+  var rosette='<svg width="90" height="104" viewBox="0 0 90 104"><circle cx="45" cy="45" r="30" fill="#0b57a4"/><circle cx="45" cy="45" r="30" fill="none" stroke="#F2B84B" stroke-width="4"/><circle cx="45" cy="45" r="20" fill="#0b57a4" stroke="#fff" stroke-width="1.5"/><text x="45" y="53" text-anchor="middle" font-size="24" fill="#F2B84B">★</text><path d="M34 70 L28 100 L40 92 L45 100 L45 72 Z" fill="#F2B84B"/><path d="M56 70 L62 100 L50 92 L45 100 L45 72 Z" fill="#e0a52e"/></svg>';
+  var waves='<svg viewBox="0 0 1000 130" preserveAspectRatio="none" style="position:absolute;bottom:0;left:0;width:100%;height:130px"><path d="M0,70 C250,10 550,120 1000,40 L1000,130 L0,130 Z" fill="#12b0c8" opacity=".85"/><path d="M0,90 C280,40 600,130 1000,60 L1000,130 L0,130 Z" fill="#0b57a4"/><path d="M0,105 C300,70 650,135 1000,85 L1000,130 L0,130 Z" fill="#0a1b4d"/><path d="M0,80 C250,30 560,120 1000,55 L1000,70 C560,135 250,45 0,95 Z" fill="#F2B84B" opacity=".9"/></svg>';
+  return '<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Chứng chỉ - '+esc(c.learner_name||'')+'</title>'
+   +'<link href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap" rel="stylesheet">'
+   +'<style>@page{size:A4 landscape;margin:0}*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+   +'.page{position:relative;width:297mm;height:210mm;background:#fff;overflow:hidden}'
+   +'.gold-top{position:absolute;top:0;left:50%;transform:translateX(-50%);width:52%;height:26px;background:linear-gradient(90deg,#caa23a,#F2B84B,#caa23a);clip-path:polygon(6% 0,94% 0,100% 100%,0 100%)}'
+   +'.corner{position:absolute;width:120px;height:120px;background:#0a1b4d}.c-tl{top:0;left:0;clip-path:polygon(0 0,100% 0,0 100%)}.c-tr{top:0;right:0;clip-path:polygon(100% 0,100% 100%,0 0)}'
+   +'.frame{position:absolute;inset:26px;border:2px solid #caa23a;border-radius:4px}.frame2{position:absolute;inset:33px;border:1px solid #0a1b4d;border-radius:2px}'
+   +'.body{position:absolute;inset:48px 60px;text-align:center;display:flex;flex-direction:column;align-items:center;z-index:3}'
+   +'.logo{height:50px;margin-bottom:2px}.title{font-size:52px;font-weight:800;color:#0a1b4d;letter-spacing:6px;line-height:1}'
+   +'.org{font-size:19px;font-weight:800;color:#0a1b4d;letter-spacing:6px;margin-top:8px}.sub1{font-size:15px;font-weight:800;color:#0a1b4d;letter-spacing:3px;margin-top:8px}'
+   +'.name{font-family:"Great Vibes","Segoe Script","Brush Script MT",cursive;font-size:68px;color:#0a1b4d;line-height:1.1;margin:12px 0 2px}'
+   +'.nameline{width:52%;border-bottom:2px solid #0a1b4d;margin-bottom:12px}.sub2{font-size:18px;font-weight:800;color:#0a1b4d;line-height:1.35;max-width:80%}'
+   +'.seal{margin:10px 0 4px}.sigs{display:flex;gap:120px;margin-top:2px}.sig{min-width:210px}.sigline{border-top:2px solid #0a1b4d;width:190px;margin:0 auto 6px}.sig b{color:#0a1b4d;font-size:15px}'
+   +'.foot{position:absolute;bottom:16px;left:0;width:100%;text-align:center;color:#0a1b4d;font-size:11px;z-index:3}.noprint{text-align:center;margin:14px}@media print{.noprint{display:none}}'
+   +'</style></head><body><div class="page">'
+   +'<div class="gold-top"></div><div class="corner c-tl"></div><div class="corner c-tr"></div><div class="frame"></div><div class="frame2"></div>'+waves
+   +'<div class="body">'+(logo?'<img class="logo" src="'+logo+'"/>':'')
+   +'<div class="title">CERTIFICATE</div><div class="org">'+esc(org)+'</div><div class="sub1">HÂN HẠNH TRAO TẶNG</div>'
+   +'<div class="name">'+esc(c.learner_name||'')+'</div><div class="nameline"></div>'
+   +'<div class="sub2">HOÀN THÀNH KHÓA HỌC '+esc((c.course_name||'').toUpperCase())+'</div>'
+   +'<div class="seal">'+rosette+'</div>'
+   +'<div class="sigs"><div class="sig"><div class="sigline"></div><b>'+esc(org)+'</b></div><div class="sig"><div class="sigline"></div><b>'+esc(c.signer_name||'Người đào tạo')+'</b></div></div>'
+   +'</div><div class="foot">Mã chứng chỉ: '+esc(c.cert_no||'')+(c.score!=null?' · Điểm: '+c.score:'')+' · Ngày cấp: '+dateStr+'</div></div>'
+   +'<div class="noprint"><button onclick="window.print()" style="background:#0a1b4d;color:#fff;border:none;padding:12px 24px;border-radius:10px;font-weight:800;font-size:15px;cursor:pointer">🖨️ In / Lưu PDF</button></div>'
+   +'</body></html>';
 }
 function exportCSV(){
   const rows=window._exportRows||[];
