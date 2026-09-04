@@ -310,6 +310,7 @@ tr:hover td{background:#fafbff}
           <div id="courseList" style="margin-top:12px"></div>
         </div>
       </div>
+      <div class="card" style="margin-top:12px"><b>🎯 Mục tiêu kỹ năng</b><div id="skTargetBox" style="margin-top:8px"></div></div>
     </section>
     <section id="v-mycourses" class="hidden">
       <div class="head"><h2>📚 Khóa học của tôi</h2><button class="btn btn-gold" onclick="openCreateCourse()">＋ Tạo khóa học</button></div>
@@ -1132,6 +1133,7 @@ function skillColor(level){
   if(level==='Mới bắt đầu')return'#b42318';
   return'#7a869a';
 }
+function skGapRec(gap){ gap=gap||0; if(gap<=0)return['Đạt mục tiêu — duy trì','#0b6b3a']; if(gap<=15)return['Gần đạt — cần củng cố','#b8860b']; return['Ưu tiên đào tạo lại','#b42318']; }
 async function renderMySkills(){
   var box=document.getElementById('skWrap'); if(!box)return;
   box.innerHTML='<div class="card"><div class="empty">Đang tải hồ sơ kỹ năng…</div></div>';
@@ -1153,16 +1155,30 @@ async function renderMySkills(){
    +'<div style="color:#7a869a;font-size:13px">Tổng hợp từ <b>'+(p.attempts||0)+'</b> bài đánh giá · <b>'+(p.answered||0)+'</b> câu đã làm · <b>'+skills.length+'</b> nhóm kỹ năng.</div></div>'
    +'</div></div>';
   var rows=skills.map(function(s){
-    var col=skillColor(s.level);
+    var col=skillColor(s.level); var tgt=(s.target!=null?s.target:80); var rec=skGapRec(s.gap);
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px">'
      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">'
      +'<b style="font-size:15px">'+esc(s.competency)+'</b>'
      +'<span class="pill" style="background:'+col+';color:#fff;white-space:nowrap">'+esc(s.level)+' · '+s.percent+'%</span></div>'
-     +'<div style="background:#eef2f7;border-radius:6px;height:12px;overflow:hidden"><div style="background:'+col+';height:12px;width:'+s.percent+'%;transition:width .6s"></div></div>'
-     +'<div style="color:#7a869a;font-size:12px;margin-top:6px">'+s.questions+' câu đã đánh giá ở nhóm kỹ năng này</div>'
+     +'<div style="position:relative;background:#eef2f7;border-radius:6px;height:12px;overflow:hidden"><div style="background:'+col+';height:12px;width:'+s.percent+'%;transition:width .6s"></div></div>'
+     +'<div style="position:relative;height:0"><i title="Mục tiêu '+tgt+'%" style="position:absolute;left:'+tgt+'%;top:-14px;width:2px;height:16px;background:#012463"></i></div>'
+     +'<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:6px;font-size:12px">'
+     +'<span style="color:#7a869a">Hiện tại '+s.percent+'% · Mục tiêu '+tgt+'% · '+s.questions+' câu</span>'
+     +'<span style="color:'+rec[1]+';font-weight:700">'+((s.gap||0)>0?('Còn thiếu '+s.gap+'% — '+rec[0]):rec[0])+'</span></div>'
      +'</div>';
   }).join('');
-  box.innerHTML=header+'<div class="card"><div style="font-weight:700;margin-bottom:10px">Chi tiết theo nhóm kỹ năng</div>'+rows+'</div>';
+  var gaps=skills.filter(function(s){return (s.gap||0)>0;}).slice(0,5);
+  var path=gaps.length?('<div class="card" style="margin-bottom:12px"><div style="font-weight:700;margin-bottom:6px">🧭 Lộ trình học gợi ý</div><div style="color:#7a869a;font-size:12px;margin-bottom:6px">Ưu tiên theo khoảng cách lớn nhất so với mục tiêu.</div>'
+    +gaps.map(function(s,i){
+        var cm=(typeof COMPETENCY_COURSE_MAP!=='undefined'&&COMPETENCY_COURSE_MAP[s.competency])?COMPETENCY_COURSE_MAP[s.competency]:null;
+        var course=cm&&cm.course?cm.course:('Ôn tập & luyện tình huống về “'+s.competency+'”');
+        var rec=skGapRec(s.gap);
+        return '<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line)">'
+          +'<div style="flex-shrink:0;width:28px;height:28px;border-radius:50%;background:#012463;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center">'+(i+1)+'</div>'
+          +'<div style="flex:1;min-width:0"><b>'+esc(s.competency)+'</b> <span style="color:'+rec[1]+';font-size:12px;font-weight:700">('+rec[0]+' · còn thiếu '+s.gap+'%)</span>'
+          +'<div style="color:#243356;font-size:13px;margin-top:2px">→ '+esc(course)+'</div></div></div>';
+    }).join('')+'</div>'):'';
+  box.innerHTML=header+path+'<div class="card"><div style="font-weight:700;margin-bottom:10px">Chi tiết theo nhóm kỹ năng</div>'+rows+'</div>';
 }
 /* ---------- LOAD ---------- */
 async function loadAll(){
@@ -1203,6 +1219,24 @@ function renderSetup(){
   document.getElementById('courseDept').innerHTML=DEPTS.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('')||'<option value="">(chưa có khoa)</option>';
   document.getElementById('deptList').innerHTML=DEPTS.map(d=>`<div style="padding:7px 0;border-bottom:1px solid var(--line)">${esc(d.name)} <span class="pill">${esc(d.code||'')}</span></div>`).join('')||'<div class="empty">Chưa có khoa.</div>';
   document.getElementById('courseList').innerHTML=COURSES.map(c=>{const d=DEPTS.find(x=>x.id===c.department_id);const cnt=BANK.filter(b=>b.course_id===c.id).length;const own=c.owner_id===ME.id;const acc=ACCESS.find(a=>a.course_id===c.id&&a.trainer_id===ME.id);const canView=ROLE==='admin'||ROLE==='manager'||own||(acc&&acc.status==='approved');let right;if(ROLE==='admin'){right=`<button class="btn btn-ghost btn-sm" onclick="courseReport('${c.id}')">📄 Báo cáo khóa</button>${cnt>0?`<span class="pill" title="Đang có ${cnt} câu hỏi — không thể xóa" style="cursor:not-allowed">🔒</span>`:`<button class="btn btn-danger btn-sm" onclick="delCourse('${c.id}')">🗑</button>`}`;}else if(ROLE==='trainer'){if(own)right=`<span class="pill" style="background:#0b6b3a;color:#fff">Khóa của tôi</span><button class="btn btn-ghost btn-sm" onclick="courseReport('${c.id}')">📄 Báo cáo</button>`;else if(acc&&acc.status==='approved')right=`<span class="pill" style="background:#0b6b3a;color:#fff">✔ Được duyệt · xem</span>`;else if(acc&&acc.status==='pending')right=`<span class="pill" style="background:#8a6d00;color:#fff">⏳ Chờ duyệt</span>`;else if(acc&&acc.status==='rejected')right=`<span class="pill" style="background:#7a1f1f;color:#fff">✖ Bị từ chối</span>`;else right=`<button class="btn btn-navy btn-sm" onclick="reqAccess('${c.id}')">🔑 Xin quyền xem</button>`;}else{right=`<span class="pill">Chỉ xem</span>`;}return `<div style="padding:7px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${esc(c.name)} <span class="pill">${esc(d?d.name:'')}</span>${canView?'':' <span class="pill" title="Chưa có quyền xem chi tiết">🔒</span>'}</span><span style="display:flex;gap:6px;align-items:center;white-space:nowrap"><b class="pill">${cnt} câu</b>${right}</span></div>`;}).join('')||'<div class="empty">Chưa có khóa.</div>';
+  renderSkillTargets();
+}
+async function renderSkillTargets(){
+  var box=document.getElementById('skTargetBox'); if(!box)return;
+  if(!(ROLE==='admin'||ROLE==='trainer'||ROLE==='manager')){box.innerHTML='';return;}
+  if(!COMPS.length){box.innerHTML='<div style="color:#7a869a;font-size:13px">Chưa có năng lực nào. Năng lực được tạo khi gắn vào câu hỏi (ngân hàng câu hỏi).</div>';return;}
+  var tr=await sb.from('skill_targets').select('competency_id,target_percent').eq('org_id',ORG.id);
+  var map={}; (tr.data||[]).forEach(function(x){map[x.competency_id]=x.target_percent;});
+  box.innerHTML='<div style="color:#7a869a;font-size:12px;margin-bottom:8px">Đặt mức mục tiêu (%) cho từng năng lực — học viên sẽ thấy khoảng cách so với mục tiêu. Mặc định 80%.</div>'
+   +COMPS.map(function(c){var v=map[c.id]!=null?map[c.id]:80;return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><span>'+esc(c.name)+'</span>'
+     +'<span style="white-space:nowrap"><input type="number" min="0" max="100" value="'+v+'" id="st_'+c.id+'" style="width:64px;padding:5px;border:1px solid var(--line);border-radius:6px;text-align:center"/>% '
+     +'<button class="btn btn-navy btn-sm" onclick="saveSkillTarget(\''+c.id+'\')">Lưu</button></span></div>';}).join('');
+}
+async function saveSkillTarget(cid){
+  var el=document.getElementById('st_'+cid); var v=parseInt(el.value,10); if(isNaN(v))v=80; v=Math.max(0,Math.min(100,v));
+  var r=await sb.from('skill_targets').upsert({org_id:ORG.id,competency_id:cid,target_percent:v,updated_by:ME.id,updated_at:new Date().toISOString()},{onConflict:'org_id,competency_id'});
+  if(r.error)return toast('Lỗi: '+r.error.message);
+  toast('Đã lưu mục tiêu');
 }
 async function addDept(){
   const name=document.getElementById('deptName').value.trim();if(!name)return toast('Nhập tên khoa');
