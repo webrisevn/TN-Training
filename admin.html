@@ -813,7 +813,7 @@ async function renderLessonBlocks(lessonId,courseId){
      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="pill" style="background:#eef2f7;color:#012463">'+mt[1]+' '+mt[2]+'</span>'
      +(own?'<span style="display:flex;gap:4px"><button class="btn btn-ghost btn-sm" onclick="moveBlock('+i+',-1,\''+lessonId+'\',\''+courseId+'\')">↑</button><button class="btn btn-ghost btn-sm" onclick="moveBlock('+i+',1,\''+lessonId+'\',\''+courseId+'\')">↓</button><button class="btn btn-ghost btn-sm" onclick="editBlock(\''+b.id+'\',\''+lessonId+'\',\''+courseId+'\')">✏️</button><button class="btn btn-danger btn-sm" onclick="delBlock(\''+b.id+'\',\''+lessonId+'\',\''+courseId+'\')">🗑</button></span>':'')
      +'</div>'+(b.title?'<div style="font-weight:600;margin-top:6px">'+esc(b.title)+'</div>':'')
-     +'<div style="margin-top:4px">'+renderBlockBody(b)+'</div></div>';
+     +'<div style="margin-top:4px">'+(b.body&&b.body.image_url?'<img src="'+esc(b.body.image_url)+'" style="max-width:130px;border-radius:6px;display:block;margin-bottom:6px">':'')+renderBlockBody(b)+'</div></div>';
   }).join('');
 }
 async function aiGenerateLesson(lessonId,courseId){
@@ -865,10 +865,39 @@ async function editBlock(blockId,lessonId,courseId){
   } else {
     fields='<label class="fl">Nội dung</label><textarea class="input" id="bkText" style="min-height:120px">'+esc(body.text||'')+'</textarea>';
   }
+  window._editImg=body.image_url||'';
+  var imgSec='<label class="fl">Ảnh minh họa (tùy chọn)</label>'
+   +'<div style="border:1px dashed var(--line);border-radius:10px;padding:10px;text-align:center">'
+   +'<img id="ebImg" src="'+esc(window._editImg)+'" style="max-width:100%;border-radius:8px;'+(window._editImg?'':'display:none')+'"/>'
+   +'<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:8px">'
+   +'<input type="file" accept="image/*" id="ebFile" style="display:none" onchange="editImgUpload(\''+lessonId+'\')"/>'
+   +'<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'ebFile\').click()">⬆️ Tải ảnh</button>'
+   +'<button class="btn btn-navy btn-sm" onclick="editImgGenerate(\''+lessonId+'\',\''+courseId+'\')">✨ Tạo ảnh</button>'
+   +'<button class="btn btn-ghost btn-sm" onclick="editImgClear()">Xóa ảnh</button>'
+   +'</div><div id="ebImgMsg" style="font-size:12px;color:#7a869a;margin-top:6px"></div></div>';
   modal('<button class="x" onclick="closeModal()">×</button><h3>Sửa block: '+mt[1]+' '+mt[2]+'</h3>'
    +'<label class="fl">Tiêu đề</label><input class="input" id="bkTitle" value="'+esc(b.title||'')+'"/>'
-   +fields
+   +fields+imgSec
    +'<button class="btn btn-gold" style="width:100%;justify-content:center;margin-top:12px" onclick="submitBlockEdit(\''+blockId+'\',\''+b.block_type+'\',\''+lessonId+'\',\''+courseId+'\')">Lưu block</button>');
+}
+function editImgClear(){window._editImg='';var im=document.getElementById('ebImg');if(im){im.src='';im.style.display='none';}var m=document.getElementById('ebImgMsg');if(m)m.textContent='Đã xóa ảnh — nhớ bấm "Lưu block".';}
+function editImgSet(url){window._editImg=url;var im=document.getElementById('ebImg');if(im){im.src=url;im.style.display='';}}
+async function editImgUpload(lessonId){
+  var fi=document.getElementById('ebFile'); var f=fi&&fi.files&&fi.files[0]; if(!f)return;
+  var msg=document.getElementById('ebImgMsg'); if(msg)msg.textContent='Đang tải ảnh…';
+  var ext=(f.name.split('.').pop()||'png').toLowerCase();
+  var path=lessonId+'/'+Date.now()+'_'+Math.random().toString(36).slice(2,7)+'.'+ext;
+  var up=await sb.storage.from('lesson-images').upload(path,f,{upsert:true,contentType:f.type||'image/png'});
+  if(up.error){if(msg)msg.textContent='Lỗi tải: '+up.error.message;return;}
+  var pub=sb.storage.from('lesson-images').getPublicUrl(path); editImgSet(pub.data.publicUrl); if(msg)msg.textContent='✓ Đã tải ảnh — nhớ bấm "Lưu block".';
+}
+async function editImgGenerate(lessonId,courseId){
+  var p=window.prompt('Mô tả ảnh muốn tạo (tiếng Việt, vd: container hàng hóa tại cảng biển, phong cách hiện đại):'); if(!p)return;
+  var msg=document.getElementById('ebImgMsg'); if(msg)msg.textContent='Đang tạo ảnh (~10–20 giây)…';
+  var r=await sb.functions.invoke('super-service',{body:{action:'image',lesson_id:lessonId,course_id:courseId,prompt:p}});
+  var err=r.error||(r.data&&r.data.error);
+  if(err){if(msg)msg.textContent='Lỗi tạo ảnh: '+(err.message||err);return;}
+  editImgSet(r.data.url); if(msg)msg.textContent='✓ Đã tạo ảnh — nhớ bấm "Lưu block".';
 }
 async function submitBlockEdit(blockId,blockType,lessonId,courseId){
   var title=document.getElementById('bkTitle').value; var body;
@@ -880,6 +909,7 @@ async function submitBlockEdit(blockId,blockType,lessonId,courseId){
   } else if(isJsonType(blockType)){
     try{ body=JSON.parse(document.getElementById('bkJson').value); }catch(e){ return toast('JSON không hợp lệ: '+e.message); }
   } else { body={text:document.getElementById('bkText').value}; }
+  if(window._editImg){ body.image_url=window._editImg; } else { if(body&&body.image_url)delete body.image_url; }
   var r=await sb.from('lesson_blocks').update({title:title,body:body}).eq('id',blockId);
   if(r.error)return toast('Lỗi: '+r.error.message);
   toast('Đã lưu block'); openLessonEditor(lessonId,courseId);
@@ -1015,7 +1045,8 @@ function lpBlockHTML(b,idx){
   var t=b.block_type, mt=blockMeta(t), body=b.body||{};
   var tags='<span class="lp-kind">'+mt[1]+' '+mt[2]+'</span>';
   if(t==='interactive_question'&&body.level)tags+='<span class="lp-lvl '+lpLevelClass(body.level)+'">📈 '+esc(levelName(body.level))+'</span>';
-  var head='<div class="lp-tags">'+tags+'</div>';
+  var imgTop=(body.image_url)?'<img src="'+esc(body.image_url)+'" alt="minh họa" style="max-width:100%;border-radius:12px;margin-bottom:12px">':'';
+  var head='<div class="lp-tags">'+tags+'</div>'+imgTop;
   var ttl=b.title?'<h2 class="lp-h">'+esc(b.title)+'</h2>':'';
   if(isQuestionType(t)){
     var st=LP.ans[idx]; var rev=st||(LP.presenter?{presenter:true}:null); var options=body.options||[];
@@ -1029,7 +1060,7 @@ function lpBlockHTML(b,idx){
   if(t==='visual_diagram'){var g=body.groups||[];var cols='<div class="lp-grp">'+g.map(function(x,i){var c=LP_PAL[i%LP_PAL.length];return '<div class="lp-gcol" style="background:'+c+'"><h4>'+esc(x.label||'')+'</h4>'+(x.items||[]).map(function(it){return '<span>'+esc(it)+'</span>';}).join('')+(x.caption?'<small>'+esc(x.caption)+'</small>':'')+'</div>';}).join('')+'</div>';return head+ttl+(body.intro?'<div class="lp-txt" style="font-size:15px;margin-bottom:8px">'+esc(body.intro)+'</div>':'')+'<div class="lp-jrn">'+cols+'</div>';}
   if(t==='visual_matrix'){var cs=body.columns||[],rows=body.rows||[];var thead='<tr><th></th>'+cs.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+'</tr>';var tb=rows.map(function(r){return '<tr><td>'+esc(r.label||'')+'</td>'+(r.cells||[]).map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';}).join('');return head+ttl+(body.intro?'<div class="lp-txt" style="font-size:15px;margin-bottom:8px">'+esc(body.intro)+'</div>':'')+'<div style="overflow:auto"><table class="lp-mx">'+thead+tb+'</table></div>';}
   if(t==='visual_steps'){var sp=body.steps||[];return head+ttl+(body.intro?'<div class="lp-txt" style="font-size:15px;margin-bottom:8px">'+esc(body.intro)+'</div>':'')+sp.map(function(x,i){return '<div class="lp-step"><div class="n">'+(i+1)+'</div><div class="lp-txt" style="font-size:15px"><b>'+esc(x.label||'')+'</b>'+(x.desc?' — '+esc(x.desc):'')+'</div></div>';}).join('');}
-  if(t==='visual'){var img=body.image_url?'<img src="'+esc(body.image_url)+'" alt="minh họa">':'<div style="font-size:40px">🖼️</div>';return head+ttl+'<div class="lp-visual">'+img+'<div style="margin-top:10px;font-size:15px;line-height:1.6">'+esc(body.text||body.caption||'')+'</div></div>';}
+  if(t==='visual'){var vhint=body.image_url?'':'<div style="font-size:40px">🖼️</div>';return head+ttl+'<div class="lp-visual">'+vhint+'<div style="margin-top:10px;font-size:15px;line-height:1.6">'+esc(body.text||body.caption||'')+'</div></div>';}
   if(t==='practice'){
     var task=body.task||body.text||''; var val=LP.notes[idx]||'';
     return head+'<h2 class="lp-h">'+(b.title?esc(b.title):'Thực hành')+'</h2><div class="lp-txt">'+esc(task)+'</div>'
