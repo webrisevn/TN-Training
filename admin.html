@@ -996,9 +996,11 @@ function lpBlockHTML(b,idx){
   if(t==='visual'){var img=body.image_url?'<img src="'+esc(body.image_url)+'" alt="minh họa">':'<div style="font-size:40px">🖼️</div>';return head+ttl+'<div class="lp-visual">'+img+'<div style="margin-top:10px;font-size:15px;line-height:1.6">'+esc(body.text||body.caption||'')+'</div></div>';}
   if(t==='practice'){
     var task=body.task||body.text||''; var val=LP.notes[idx]||'';
-    var rub=(body.rubric&&body.rubric.length)?'<div class="lp-rub" id="lpRub'+idx+'"><b>Tiêu chí chấm:</b><ul>'+body.rubric.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>'+(body.model?'<div class="lp-model"><b>Gợi ý bản tốt hơn:</b><br>'+esc(body.model)+'</div>':'')+'</div>':'';
-    var btn=(body.rubric&&body.rubric.length)?'<button class="lp-btn lp-next" style="margin-top:10px" onclick="document.getElementById(\'lpRub'+idx+'\').classList.add(\'show\')">✅ Xem nhận xét &amp; gợi ý</button>':'';
-    return head+'<h2 class="lp-h">'+(b.title?esc(b.title):'Thực hành')+'</h2><div class="lp-txt">'+esc(task)+'</div>'+(body.hint?'<div class="lp-txt" style="font-size:14px;color:#7a869a;margin-top:4px">'+esc(body.hint)+'</div>':'')+'<textarea class="lp-note" placeholder="Nhập bài làm của bạn…" oninput="LP.notes['+idx+']=this.value">'+esc(val)+'</textarea>'+btn+rub;
+    return head+'<h2 class="lp-h">'+(b.title?esc(b.title):'Thực hành')+'</h2><div class="lp-txt">'+esc(task)+'</div>'
+      +(body.hint?'<div class="lp-txt" style="font-size:14px;color:#7a869a;margin-top:4px">'+esc(body.hint)+'</div>':'')
+      +'<textarea class="lp-note" placeholder="Nhập bài làm của bạn…" oninput="LP.notes['+idx+']=this.value">'+esc(val)+'</textarea>'
+      +'<button class="lp-btn lp-next" style="margin-top:10px" id="lpFbBtn'+idx+'" onclick="lpPractice('+idx+')">✅ Xem nhận xét &amp; gợi ý</button>'
+      +'<div class="lp-rub" id="lpRub'+idx+'"></div>';
   }
   if(t==='discussion'){var v2=LP.notes[idx]||'';return head+ttl+'<div class="lp-txt">'+esc(body.text||'')+'</div><textarea class="lp-note" placeholder="Ghi lại suy nghĩ của bạn…" oninput="LP.notes['+idx+']=this.value">'+esc(v2)+'</textarea>';}
   if(t==='reflection'){var pr=body.prompts||['Một điều bạn học được','Một điều cần cải thiện','Một việc áp dụng ngay'];return head+'<h2 class="lp-h">“Ngày mai bạn sẽ làm khác điều gì?”</h2>'+pr.map(function(p,i){return '<div class="lp-txt" style="font-size:14px;margin-top:'+(i?8:0)+'px">'+esc(p)+':</div><textarea class="lp-note" style="min-height:56px" oninput="LP.notes[\'r'+idx+'_'+i+'\']=this.value">'+esc(LP.notes['r'+idx+'_'+i]||'')+'</textarea>';}).join('');}
@@ -1012,6 +1014,32 @@ function lpBlockHTML(b,idx){
   }
   if(t==='summary'){var pts=body.points||(body.text?[body.text]:[]);if(pts.length)return head+ttl+'<div>'+pts.map(function(x){return '<div class="lp-txt" style="display:flex;gap:8px;margin:6px 0"><span>✅</span><span>'+esc(x)+'</span></div>';}).join('')+'</div>';}
   return head+ttl+'<div class="lp-txt">'+esc(body.text||'')+'</div>';
+}
+async function lpPractice(idx){
+  var b=LP.blocks[idx], body=b.body||{};
+  var ans=(LP.notes[idx]||'').trim();
+  if(!ans){toast('Hãy viết bài làm của bạn trước.');return;}
+  var box=document.getElementById('lpRub'+idx), btn=document.getElementById('lpFbBtn'+idx);
+  if(btn){btn.disabled=true;btn.textContent='Đang phân tích bài làm…';}
+  box.classList.add('show'); box.innerHTML='<div style="color:#7a869a">Đang xem bài làm của bạn…</div>';
+  var r;
+  try{ r=await sb.functions.invoke('super-service',{body:{action:'feedback',task:(body.task||body.text||''),rubric:(body.rubric||[]),answer:ans}}); }
+  catch(e){ r={error:e}; }
+  var err=r.error||(r.data&&r.data.error);
+  if(err){
+    var rl=(body.rubric||[]).map(function(x){return '<li>'+esc(x)+'</li>';}).join('');
+    box.innerHTML=(rl?'<b>Tiêu chí tự chấm:</b><ul>'+rl+'</ul>':'')+(body.model?'<div class="lp-model"><b>Bài mẫu tham khảo:</b><br>'+esc(body.model)+'</div>':'<div style="color:#7a869a">Chưa lấy được nhận xét, bạn thử lại sau nhé.</div>');
+    if(btn){btn.disabled=false;btn.textContent='✅ Xem nhận xét & gợi ý';}
+    return;
+  }
+  var f=(r.data&&r.data.feedback)||{};
+  var crit=(f.criteria||[]).map(function(c){return '<li>'+(c.ok?'✅':'⬜')+' <b>'+esc(c.name||'')+':</b> '+esc(c.comment||'')+'</li>';}).join('');
+  var imp=(f.improve||[]).map(function(x){return '<li>'+esc(x)+'</li>';}).join('');
+  box.innerHTML=(f.overall?'<div style="margin-bottom:8px;font-weight:600">'+esc(f.overall)+'</div>':'')
+    +(crit?'<b>Theo tiêu chí:</b><ul>'+crit+'</ul>':'')
+    +(imp?'<b>Nên cải thiện:</b><ul>'+imp+'</ul>':'')
+    +(f.better?'<div class="lp-model"><b>Gợi ý viết lại tốt hơn (dựa trên bài của bạn):</b><br>'+esc(f.better)+'</div>':'');
+  if(btn)btn.style.display='none';
 }
 function lpAnswer(idx,oi){
   if(LP.ans[idx])return;
