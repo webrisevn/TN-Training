@@ -821,6 +821,16 @@ function renderBlockBody(b){
 async function openLessonEditor(lessonId,courseId){
   var lr=await sb.from('course_lessons').select('*').eq('id',lessonId).single(); var l=lr.data; if(!l)return;
   var c=COURSES.find(function(x){return x.id===courseId;}); var own=c&&(c.owner_id===ME.id||ROLE==='admin');
+  var _ll=await sb.from('course_lessons').select('id,title,order_index,status').eq('course_id',courseId).order('order_index'); var _lessons=_ll.data||[];
+  var _i=_lessons.findIndex(function(x){return x.id===lessonId;});
+  var _prev=_i>0?_lessons[_i-1]:null, _next=(_i>=0&&_i<_lessons.length-1)?_lessons[_i+1]:null;
+  var _navF='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'
+    +'<div>'+(_prev?'<button class="btn btn-ghost btn-sm" onclick="openLessonEditor(\''+_prev.id+'\',\''+courseId+'\')">◀ Bài trước</button>':'')+'</div>'
+    +'<div style="color:var(--muted);font-size:12px">Bài '+(_i+1)+' / '+_lessons.length+'</div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    +(_next?'<button class="btn btn-navy btn-sm" onclick="openLessonEditor(\''+_next.id+'\',\''+courseId+'\')">Bài tiếp theo ▶</button>':'')
+    +(own?'<button class="btn btn-gold btn-sm" onclick="addLessonAndOpen(\''+courseId+'\')">＋ Soạn bài mới</button>':'')
+    +'</div></div>';
   var ctrls = own ? ('<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
     +'<button class="btn btn-gold btn-sm" id="leAiBtn" onclick="aiGenerateLesson(\''+lessonId+'\',\''+courseId+'\')">🤖 AI tạo nội dung</button>'
     +'<button class="btn btn-ghost btn-sm" onclick="addBlock(\''+lessonId+'\',\''+courseId+'\')">＋ Thêm block</button>'
@@ -830,8 +840,16 @@ async function openLessonEditor(lessonId,courseId){
     +(l.status==='published'?'<button class="btn btn-ghost btn-sm" onclick="setLessonStatus(\''+lessonId+'\',\'draft\',\''+courseId+'\')">Về nháp</button>':'')+'</div>') : '';
   modal('<button class="x" onclick="closeModal()">×</button><h3>📝 '+esc(l.title)+' <span class="pill" style="background:#64748b;color:#fff;font-size:11px">'+esc(l.status)+'</span></h3>'
    +(l.objective?'<div style="color:#7a869a;font-size:13px;margin-bottom:8px">🎯 '+esc(l.objective)+'</div>':'')
-   +ctrls+'<div id="leBlocks">Đang tải...</div>', true);
+   +ctrls+'<div id="leBlocks">Đang tải...</div>'+_navF, true);
   renderLessonBlocks(lessonId,courseId);
+}
+async function addLessonAndOpen(courseId){
+  var t=prompt('Tên bài học mới:'); if(!t)return;
+  var ex=await sb.from('course_lessons').select('order_index').eq('course_id',courseId).order('order_index',{ascending:false}).limit(1);
+  var base=(ex.data&&ex.data[0]&&ex.data[0].order_index)?ex.data[0].order_index:0;
+  var r=await sb.from('course_lessons').insert({course_id:courseId,title:t,order_index:base+1,status:'draft',created_by:ME.id}).select().single();
+  if(r.error)return toast('Lỗi: '+(r.error.message||r.error));
+  toast('Đã tạo bài mới — soạn tiếp nhé'); openLessonEditor(r.data.id,courseId);
 }
 var QGATE=[
   ['objective','Mục tiêu bài học',function(t){return t['objective'];},true],
@@ -983,21 +1001,47 @@ async function submitBlockEdit(blockId,blockType,lessonId,courseId){
 /* ---------- 2.7 GHI DANH + LEARNER MY LEARNING ---------- */
 async function renderEnroll(courseId){
   var box=document.getElementById('ceEnroll'); if(!box)return;
-  var mr=await sb.from('course_members').select('user_id').eq('course_id',courseId); var members=(mr.data||[]).map(function(x){return x.user_id;});
-  var lr=await sb.from('profiles').select('id,full_name').eq('org_id',ORG.id).eq('role','learner').order('full_name'); var learners=lr.data||[];
-  var enrolled=learners.filter(function(l){return members.indexOf(l.id)>=0;});
-  var avail=learners.filter(function(l){return members.indexOf(l.id)<0;});
-  var opts='<option value="">— chọn học viên —</option>'+avail.map(function(l){return '<option value="'+l.id+'">'+esc(l.full_name||l.id.slice(0,8))+'</option>';}).join('');
-  box.innerHTML='<div style="margin-bottom:6px">'+(enrolled.length?enrolled.map(function(l){return '<span class="pill" style="background:#eef2f7;color:#012463;margin:2px;display:inline-block">'+esc(l.full_name||'')+' <a href="#" onclick="removeEnroll(\''+courseId+'\',\''+l.id+'\');return false" style="color:#b00">×</a></span>';}).join(''):'<span style="color:#7a869a">Chưa ghi danh học viên nào. Tạo học viên ở ⚙️ Quản trị nếu chưa có.</span>')+'</div>'
-   +'<div style="display:flex;gap:6px"><select id="enrSel" style="flex:1">'+opts+'</select><button class="btn btn-navy btn-sm" onclick="addEnroll(\''+courseId+'\')">＋ Ghi danh</button></div>';
+  box.innerHTML='<div class="empty">Đang tải…</div>';
+  var er=await sb.rpc('course_learners',{p_course:courseId}); if(er.error){box.innerHTML='<div class="empty">Không tải được: '+esc(er.error.message)+'</div>';return;}
+  var enrolled=er.data||[];
+  var or_=await sb.rpc('org_learners'); var all=(or_.data)||[];
+  var enrIds={}; enrolled.forEach(function(x){enrIds[x.user_id]=1;});
+  var avail=all.filter(function(l){return !enrIds[l.user_id];});
+  var opts='<option value="">— chọn học viên có sẵn —</option>'+avail.map(function(l){return '<option value="'+l.user_id+'">'+esc(l.full_name||l.user_id.slice(0,8))+(l.position?' · '+esc(l.position):'')+'</option>';}).join('');
+  var chips=enrolled.length?enrolled.map(function(l){return '<span class="pill" style="background:#eef2f7;color:#012463;margin:2px;display:inline-block">'+esc(l.full_name||'')+(l.status==='invited'?' <span style="color:#8a6d00">(đã mời)</span>':'')+' <a href="#" onclick="removeEnroll(\''+courseId+'\',\''+l.user_id+'\');return false" style="color:#b00;text-decoration:none">×</a></span>';}).join(''):'<span style="color:#7a869a">Chưa ghi danh học viên nào.</span>';
+  box.innerHTML='<div style="margin-bottom:8px">'+chips+'</div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"><select id="enrSel" style="flex:1;min-width:180px">'+opts+'</select><button class="btn btn-navy btn-sm" onclick="addEnroll(\''+courseId+'\')">＋ Ghi danh</button></div>'
+   +'<div style="border-top:1px dashed var(--line);padding-top:10px"><b style="font-size:13px">Thêm học viên mới (chưa có tài khoản)</b>'
+   +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">'
+   +'<input class="input" id="nlName" placeholder="Họ tên *"/><input class="input" id="nlEmail" placeholder="Email *" inputmode="email"/>'
+   +'<input class="input" id="nlPhone" placeholder="SĐT/Zalo" inputmode="tel"/><input class="input" id="nlPos" placeholder="Chức vụ"/></div>'
+   +'<button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="addNewLearner(\''+courseId+'\')">＋ Tạo &amp; ghi danh</button>'
+   +'<div id="nlMsg" style="font-size:12px;margin-top:6px"></div></div>';
 }
 async function addEnroll(courseId){
   var uid=document.getElementById('enrSel').value; if(!uid)return toast('Chọn học viên');
-  var r=await sb.from('course_members').insert({course_id:courseId,user_id:uid});
-  if(r.error)return toast('Lỗi: '+r.error.message);
+  var r=await sb.functions.invoke('admin-users',{body:{action:'enroll',course_id:courseId,user_id:uid}});
+  var err=(r.data&&r.data.error)||r.error; if(err)return toast('Lỗi: '+(err.message||err));
   toast('Đã ghi danh'); renderEnroll(courseId);
 }
-async function removeEnroll(courseId,uid){ await sb.from('course_members').delete().eq('course_id',courseId).eq('user_id',uid); renderEnroll(courseId); }
+async function removeEnroll(courseId,uid){
+  var r=await sb.functions.invoke('admin-users',{body:{action:'unenroll',course_id:courseId,user_id:uid}});
+  var err=(r.data&&r.data.error)||r.error; if(err)return toast('Lỗi: '+(err.message||err));
+  renderEnroll(courseId);
+}
+async function addNewLearner(courseId){
+  var name=(document.getElementById('nlName').value||'').trim(), email=(document.getElementById('nlEmail').value||'').trim();
+  var msg=document.getElementById('nlMsg');
+  if(!name||!email){msg.innerHTML='<span style="color:#b00">Nhập Họ tên và Email.</span>';return;}
+  msg.textContent='Đang tạo tài khoản…';
+  var r=await sb.functions.invoke('admin-users',{body:{action:'add_learner_to_course',course_id:courseId,full_name:name,email:email,phone:(document.getElementById('nlPhone').value||'').trim()||null,position:(document.getElementById('nlPos').value||'').trim()||null}});
+  var err=(r.data&&r.data.error)||r.error;
+  if(err){msg.innerHTML='<span style="color:#b00">Lỗi: '+esc(err.message||err)+'</span>';return;}
+  var pw=r.data&&r.data.tempPassword;
+  msg.innerHTML='<span style="color:#0b6b3a">✓ Đã tạo & ghi danh. Mật khẩu tạm: <b>'+esc(pw||'')+'</b> — gửi cho học viên đăng nhập lần đầu (nên đổi mật khẩu ngay).</span>';
+  ['nlName','nlEmail','nlPhone','nlPos'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
+  renderEnroll(courseId);
+}
 
 async function renderMyLearning(){
   var box=document.getElementById('mlList'); if(!box)return;

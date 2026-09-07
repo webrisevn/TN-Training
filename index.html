@@ -566,9 +566,10 @@ function showResult(r){
     const all=[...strengths,...dev];
     setTimeout(()=>{document.querySelectorAll('#capBlock .track>i').forEach((el,i)=>{if(all[i])el.style.width=all[i].percent+'%';});},120);
   }else document.getElementById('capBlock').style.display='none';
-  // leaderboard
-  const showLB=CFG.show_leaderboard!==false&&r.leaderboard&&r.leaderboard.length;
-  document.getElementById('lbBlock').style.display=showLB?'block':'none';
+  // leaderboard — QUYỀN RIÊNG TƯ: học viên chỉ xem kết quả của mình, KHÔNG xem của người khác.
+  // Bảng xếp hạng chỉ dành cho màn trình chiếu của trainer (board.html), không hiện ở kết quả cá nhân.
+  const showLB=false;
+  document.getElementById('lbBlock').style.display='none';
   if(showLB){const medal=['🥇','🥈','🥉'];const me=document.getElementById('pName').value.trim();
     document.getElementById('lbList').innerHTML=r.leaderboard.map((x,i)=>`<div class="lb${x.name===me?' me':''}"><div class="rk">${medal[i]||('#'+x.rank)}</div><div class="who">${esc(x.name)}<small>${esc(x.position||'—')}</small></div><div class="sc">${x.score}</div></div>`).join('');
   }
