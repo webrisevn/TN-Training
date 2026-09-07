@@ -1008,8 +1008,9 @@ async function renderEnroll(courseId){
   var enrIds={}; enrolled.forEach(function(x){enrIds[x.user_id]=1;});
   var avail=all.filter(function(l){return !enrIds[l.user_id];});
   var opts='<option value="">— chọn học viên có sẵn —</option>'+avail.map(function(l){return '<option value="'+l.user_id+'">'+esc(l.full_name||l.user_id.slice(0,8))+(l.position?' · '+esc(l.position):'')+'</option>';}).join('');
-  var chips=enrolled.length?enrolled.map(function(l){return '<span class="pill" style="background:#eef2f7;color:#012463;margin:2px;display:inline-block">'+esc(l.full_name||'')+(l.status==='invited'?' <span style="color:#8a6d00">(đã mời)</span>':'')+' <a href="#" onclick="removeEnroll(\''+courseId+'\',\''+l.user_id+'\');return false" style="color:#b00;text-decoration:none">×</a></span>';}).join(''):'<span style="color:#7a869a">Chưa ghi danh học viên nào.</span>';
-  box.innerHTML='<div style="margin-bottom:8px">'+chips+'</div>'
+  var chips=enrolled.length?enrolled.map(function(l){return '<span class="pill" style="background:#eef2f7;color:#012463;margin:2px;display:inline-block">'+esc(l.full_name||'')+(l.status==='invited'?' <span style="color:#8a6d00">(đã mời)</span>':'')+' <a href="#" onclick="resetLearnerPw(\''+courseId+'\',\''+l.user_id+'\');return false" title="Cấp lại mật khẩu" style="color:#0b6b3a;text-decoration:none">🔑</a> <a href="#" onclick="removeEnroll(\''+courseId+'\',\''+l.user_id+'\');return false" title="Gỡ khỏi khóa" style="color:#b00;text-decoration:none">×</a></span>';}).join(''):'<span style="color:#7a869a">Chưa ghi danh học viên nào.</span>';
+  box.innerHTML='<div style="margin-bottom:6px">'+chips+'</div>'
+   +'<div id="enrPwMsg" style="font-size:13px;margin-bottom:10px"></div>'
    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"><select id="enrSel" style="flex:1;min-width:180px">'+opts+'</select><button class="btn btn-navy btn-sm" onclick="addEnroll(\''+courseId+'\')">＋ Ghi danh</button></div>'
    +'<div style="border-top:1px dashed var(--line);padding-top:10px"><b style="font-size:13px">Thêm học viên mới (chưa có tài khoản)</b>'
    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">'
@@ -1037,10 +1038,19 @@ async function addNewLearner(courseId){
   var r=await sb.functions.invoke('admin-users',{body:{action:'add_learner_to_course',course_id:courseId,full_name:name,email:email,phone:(document.getElementById('nlPhone').value||'').trim()||null,position:(document.getElementById('nlPos').value||'').trim()||null}});
   var err=(r.data&&r.data.error)||r.error;
   if(err){msg.innerHTML='<span style="color:#b00">Lỗi: '+esc(err.message||err)+'</span>';return;}
-  var pw=r.data&&r.data.tempPassword;
-  msg.innerHTML='<span style="color:#0b6b3a">✓ Đã tạo & ghi danh. Mật khẩu tạm: <b>'+esc(pw||'')+'</b> — gửi cho học viên đăng nhập lần đầu (nên đổi mật khẩu ngay).</span>';
+  var pw=r.data&&r.data.tempPassword, em=email;
   ['nlName','nlEmail','nlPhone','nlPos'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
-  renderEnroll(courseId);
+  await renderEnroll(courseId);
+  var pm=document.getElementById('enrPwMsg');
+  if(pm)pm.innerHTML='<div style="background:#e9f7ef;border:1px solid #bfe6cd;border-radius:8px;padding:8px 10px">✓ Đã tạo &amp; ghi danh <b>'+esc(name)+'</b>.<br>Đăng nhập: <b>'+esc(em)+'</b> · Mật khẩu tạm: <b style="font-size:15px;color:#0b6b3a">'+esc(pw||'')+'</b><br><span style="color:#7a869a;font-size:12px">Gửi cho học viên để đăng nhập lần đầu, nên đổi mật khẩu ngay. Mật khẩu chỉ hiện lúc này — nếu quên, bấm 🔑 để cấp lại.</span></div>';
+}
+async function resetLearnerPw(courseId,uid){
+  var pm=document.getElementById('enrPwMsg'); if(pm)pm.textContent='Đang cấp lại mật khẩu…';
+  var r=await sb.functions.invoke('admin-users',{body:{action:'reset_learner_password',course_id:courseId,user_id:uid}});
+  var err=(r.data&&r.data.error)||r.error;
+  if(err){if(pm)pm.innerHTML='<span style="color:#b00">Lỗi: '+esc(err.message||err)+'</span>';return;}
+  var pw=r.data&&r.data.tempPassword;
+  if(pm)pm.innerHTML='<div style="background:#e9f7ef;border:1px solid #bfe6cd;border-radius:8px;padding:8px 10px">🔑 Mật khẩu mới: <b style="font-size:15px;color:#0b6b3a">'+esc(pw||'')+'</b> — gửi cho học viên (nên đổi ngay sau khi đăng nhập).</div>';
 }
 
 async function renderMyLearning(){
