@@ -1,6 +1,6 @@
 <!doctype html><html lang="vi"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>Khảo sát mức độ sẵn sàng AI</title>
+<title>Khảo sát</title>
 <style>
 :root{--navy:#012463;--navy2:#0a1b4d;--gold:#F2B84B;--gold2:#d99b2b;--ink:#16233f;--muted:#6b7a99;--line:#e6eaf2;--green:#0b6b3a}
 *{box-sizing:border-box}html,body{margin:0}
@@ -23,6 +23,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Ar
 .opt button{width:100%;aspect-ratio:1;border:2px solid var(--line);background:#fff;border-radius:12px;font-size:16px;font-weight:800;color:var(--navy);cursor:pointer;transition:.12s}
 .opt button.sel{background:var(--navy);color:#fff;border-color:var(--navy);transform:scale(1.05)}
 .scale-lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:6px}
+.opts{display:flex;flex-direction:column;gap:8px}
+.choice{width:100%;text-align:left;border:2px solid var(--line);background:#fff;border-radius:12px;padding:12px 14px;font-size:15px;font-weight:600;color:var(--navy);cursor:pointer;transition:.12s}
+.choice.sel{background:var(--navy);color:#fff;border-color:var(--navy)}
+.ta{width:100%;min-height:84px;border:1.5px solid var(--line);border-radius:10px;padding:12px;font-size:15px;font-family:inherit}
+.hint{font-size:11px;color:var(--muted);margin-top:6px}
 .foot{position:fixed;bottom:0;left:0;width:100%;background:#fff;border-top:1px solid var(--line);padding:12px 14px;max-width:640px;left:50%;transform:translateX(-50%)}
 .center{text-align:center;padding:40px 20px}
 .big{font-size:60px}
@@ -32,7 +37,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Ar
 </style></head>
 <body>
 <div class="wrap">
-  <div class="top"><h1 id="sTitle">Khảo sát mức độ sẵn sàng AI</h1><p id="sIntro"></p></div>
+  <div class="top"><h1 id="sTitle">Khảo sát</h1><p id="sIntro"></p></div>
 
   <div id="scr-start" class="card hidden">
     <div style="font-weight:800;color:var(--navy);font-size:16px;margin-bottom:4px">Thông tin của bạn</div>
@@ -77,8 +82,8 @@ async function boot(){
   var r=await sb.rpc('get_survey_public',{p_qr:sl});
   if(r.error||!r.data){show('scr-nofound');return;}
   SURVEY=r.data;
-  document.getElementById('sTitle').textContent=SURVEY.title||'Khảo sát mức độ sẵn sàng AI';
-  document.getElementById('sIntro').textContent=SURVEY.intro||'Khảo sát ngắn 10 câu — không có đúng/sai, giúp thiết kế đào tạo phù hợp.';
+  document.getElementById('sTitle').textContent=SURVEY.title||'Khảo sát';
+  document.getElementById('sIntro').textContent=SURVEY.intro||'Khảo sát ngắn — ý kiến của bạn giúp chúng tôi cải thiện.';
   document.getElementById('wrapDept').style.display=SURVEY.require_department?'':'none';
   document.getElementById('wrapPos').style.display=SURVEY.require_position?'':'none';
   show('scr-start');
@@ -89,29 +94,38 @@ function startSurvey(){
   if(SURVEY.require_position && !document.getElementById('fPos').value.trim()){err.textContent='Vui lòng nhập Chức vụ.';err.classList.remove('hidden');return;}
   renderQ(); show('scr-q'); document.getElementById('footBar').classList.remove('hidden'); updProg(); window.scrollTo(0,0);
 }
+function qById(qid){return (SURVEY.questions||[]).find(function(x){return x.id===qid;});}
+function isAnswered(q){var v=ANS[q.id]; if(q.qtype==='text')return true; if(q.qtype==='multi')return Array.isArray(v)&&v.length>0; return v!=null&&v!=='';}
 function renderQ(){
   var qs=SURVEY.questions||[];
   document.getElementById('qList').innerHTML=qs.map(function(q,i){
-    var opts=[1,2,3,4,5].map(function(n){return '<div class="opt"><button id="o_'+q.id+'_'+n+'" onclick="pick(\''+q.id+'\','+n+')">'+n+'</button></div>';}).join('');
-    return '<div class="q">'+(q.dimension?'<span class="dim">'+esc(q.dimension)+'</span>':'')
-      +'<div class="qt">'+(i+1)+'. '+esc(q.question_text)+'</div>'
-      +'<div class="scale">'+opts+'</div>'
-      +'<div class="scale-lbl"><span>'+LIKERT[0]+'</span><span>'+LIKERT[4]+'</span></div></div>';
+    var head='<div class="q">'+(q.dimension?'<span class="dim">'+esc(q.dimension)+'</span>':'')+'<div class="qt">'+(i+1)+'. '+esc(q.question_text)+'</div>';
+    var body='';
+    if(q.qtype==='single'||q.qtype==='multi'){
+      var opts=(q.options||[]);
+      body='<div class="opts">'+opts.map(function(o,idx){return '<button type="button" id="c_'+q.id+'_'+idx+'" class="choice" onclick="'+(q.qtype==='multi'?'toggleMulti':'pickSingle')+'(\''+q.id+'\','+idx+')">'+esc(o)+'</button>';}).join('')+'</div>'+(q.qtype==='multi'?'<div class="hint">Có thể chọn nhiều đáp án</div>':'');
+    } else if(q.qtype==='text'){
+      body='<textarea class="ta" id="t_'+q.id+'" oninput="setText(\''+q.id+'\',this.value)" placeholder="Nhập ý kiến của bạn (không bắt buộc)…"></textarea>';
+    } else {
+      var lopts=[1,2,3,4,5].map(function(n){return '<div class="opt"><button type="button" id="o_'+q.id+'_'+n+'" onclick="pick(\''+q.id+'\','+n+')">'+n+'</button></div>';}).join('');
+      body='<div class="scale">'+lopts+'</div><div class="scale-lbl"><span>'+LIKERT[0]+'</span><span>'+LIKERT[4]+'</span></div>';
+    }
+    return head+body+'</div>';
   }).join('');
 }
-function pick(qid,n){
-  ANS[qid]=n;
-  for(var k=1;k<=5;k++){var el=document.getElementById('o_'+qid+'_'+k);if(el)el.classList.toggle('sel',k===n);}
-  updProg();
-}
+function pick(qid,n){ ANS[qid]=n; for(var k=1;k<=5;k++){var el=document.getElementById('o_'+qid+'_'+k);if(el)el.classList.toggle('sel',k===n);} updProg(); }
+function pickSingle(qid,idx){ var q=qById(qid); ANS[qid]=(q.options||[])[idx]; (q.options||[]).forEach(function(o,i){var el=document.getElementById('c_'+qid+'_'+i);if(el)el.classList.toggle('sel',i===idx);}); updProg(); }
+function toggleMulti(qid,idx){ var q=qById(qid); var v=Array.isArray(ANS[qid])?ANS[qid]:[]; var opt=(q.options||[])[idx]; var p=v.indexOf(opt); if(p>=0)v.splice(p,1);else v.push(opt); ANS[qid]=v; var el=document.getElementById('c_'+qid+'_'+idx); if(el)el.classList.toggle('sel',v.indexOf(opt)>=0); updProg(); }
+function setText(qid,val){ if(val&&val.trim())ANS[qid]=val; else delete ANS[qid]; updProg(); }
 function updProg(){
-  var qs=SURVEY.questions||[]; var done=qs.filter(function(q){return ANS[q.id];}).length;
-  document.getElementById('prog').textContent=done+' / '+qs.length+' câu';
-  document.getElementById('submitBtn').textContent=done>=qs.length?'Gửi khảo sát':('Còn '+(qs.length-done)+' câu chưa trả lời');
+  var qs=SURVEY.questions||[]; var req=qs.filter(function(q){return q.qtype!=='text';});
+  var done=req.filter(function(q){return isAnswered(q);}).length;
+  document.getElementById('prog').textContent=done+' / '+req.length+' câu bắt buộc';
+  document.getElementById('submitBtn').textContent=done>=req.length?'Gửi khảo sát':('Còn '+(req.length-done)+' câu bắt buộc');
 }
 async function submitSurvey(){
-  var qs=SURVEY.questions||[]; var miss=qs.filter(function(q){return !ANS[q.id];});
-  if(miss.length){ var first=document.querySelector('.q'); alert('Vui lòng trả lời hết '+qs.length+' câu ('+miss.length+' câu còn thiếu).'); return; }
+  var qs=SURVEY.questions||[]; var miss=qs.filter(function(q){return q.qtype!=='text' && !isAnswered(q);});
+  if(miss.length){ alert('Vui lòng trả lời hết các câu bắt buộc ('+miss.length+' câu còn thiếu).'); return; }
   var btn=document.getElementById('submitBtn'); btn.disabled=true; btn.textContent='Đang gửi…';
   var r=await sb.rpc('submit_survey',{p_qr:slug(),p_name:document.getElementById('fName').value.trim(),
     p_dept:document.getElementById('fDept').value.trim(),p_position:document.getElementById('fPos').value.trim(),

@@ -314,10 +314,11 @@ tr:hover td{background:#fafbff}
       <div class="card" style="margin-top:12px"><b>🎯 Mục tiêu kỹ năng</b><div id="skTargetBox" style="margin-top:8px"></div></div>
     </section>
     <section id="v-surveys" class="hidden">
-      <div class="head"><h2>📋 Khảo sát mức độ sẵn sàng AI</h2></div>
+      <div class="head"><h2>📋 Khảo sát</h2></div>
       <div class="card">
         <b>Tạo khảo sát mới</b>
-        <div class="row" style="margin-top:8px"><input class="input" id="svTitle" placeholder="Tên khảo sát (VD: Khảo sát sẵn sàng AI — MT Group)"/></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Tạo khảo sát bất kỳ chủ đề: mức độ hài lòng, nhu cầu đào tạo, văn hóa doanh nghiệp, ý kiến nhân viên… với nhiều loại câu hỏi.</div>
+        <div class="row" style="margin-top:8px"><input class="input" id="svTitle" placeholder="Tên khảo sát (VD: Khảo sát mức độ hài lòng nhân viên)"/></div>
         <textarea class="input" id="svIntro" placeholder="Lời giới thiệu ngắn (tùy chọn)" style="margin-top:8px;min-height:56px"></textarea>
         <button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="createSurvey()">＋ Tạo khảo sát</button>
       </div>
@@ -1634,7 +1635,7 @@ async function renderSurveys(){
    +SURVEYS.map(function(s){var qcnt=qn[s.id]||0;
      return '<tr><td><b>'+esc(s.title)+'</b></td><td>'+qcnt+'</td><td><b>'+(rn[s.id]||0)+'</b></td><td><span class="tag st-'+s.status+'">'+s.status+'</span></td>'
       +'<td class="actions">'
-      +(qcnt===0?'<button class="btn btn-navy btn-sm" onclick="genDefaultQuestions(\''+s.id+'\')">🧩 Tạo 10 câu mặc định</button>':'<button class="btn btn-ghost btn-sm" onclick="editSurveyQ(\''+s.id+'\')">Sửa câu hỏi</button>')
+      +(qcnt===0?'<button class="btn btn-navy btn-sm" onclick="editSurveyQ(\''+s.id+'\')">＋ Thêm câu hỏi</button>':'<button class="btn btn-ghost btn-sm" onclick="editSurveyQ(\''+s.id+'\')">Sửa câu hỏi</button>')
       +(s.status==='published'?'<button class="btn btn-ghost btn-sm" onclick="setSurveyStatus(\''+s.id+'\',\'closed\')">Đóng</button>':'<button class="btn btn-gold btn-sm" onclick="setSurveyStatus(\''+s.id+'\',\'published\')">Publish</button>')
       +'<button class="btn btn-navy btn-sm" onclick="surveyQR(\''+s.id+'\')">QR</button>'
       +'<button class="btn btn-ghost btn-sm" onclick="surveyDashboard(\''+s.id+'\')">📊 Dashboard</button>'
@@ -1656,15 +1657,25 @@ async function genDefaultQuestions(sid){
   if(r.error)return toast('Lỗi: '+r.error.message);
   toast('Đã tạo 10 câu mặc định'); renderSurveys();
 }
+function svToggleOpts(qid){var t=(document.getElementById('sq_type_'+qid)||{}).value;var w=document.getElementById('sq_optwrap_'+qid);if(w)w.style.display=(t==='single'||t==='multi')?'':'none';}
 async function editSurveyQ(sid){
   var r=await sb.from('survey_questions').select('*').eq('survey_id',sid).order('order_index'); var qs=r.data||[];
   window._svQIds=qs.map(function(q){return q.id;});
-  var rows=qs.map(function(q){return '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px">'
-    +'<input class="input" id="sq_dim_'+q.id+'" value="'+esc(q.dimension||'')+'" placeholder="Chiều năng lực" style="font-size:12px;margin-bottom:4px"/>'
-    +'<textarea class="input" id="sq_txt_'+q.id+'" style="min-height:44px">'+esc(q.question_text||'')+'</textarea>'
+  var rows=qs.map(function(q){var ty=q.qtype||'likert5';var isC=(ty==='single'||ty==='multi');
+    return '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px">'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">'
+    +'<input class="input" id="sq_dim_'+q.id+'" value="'+esc(q.dimension||'')+'" placeholder="Nhóm/chủ đề (tùy chọn)" style="font-size:12px;flex:1;min-width:110px"/>'
+    +'<select class="input" id="sq_type_'+q.id+'" style="font-size:12px;width:auto" onchange="svToggleOpts(\''+q.id+'\')">'
+    +'<option value="likert5"'+(ty==='likert5'?' selected':'')+'>Thang điểm 1–5</option>'
+    +'<option value="single"'+(ty==='single'?' selected':'')+'>Chọn 1 đáp án</option>'
+    +'<option value="multi"'+(ty==='multi'?' selected':'')+'>Chọn nhiều đáp án</option>'
+    +'<option value="text"'+(ty==='text'?' selected':'')+'>Tự luận (ý kiến)</option></select></div>'
+    +'<textarea class="input" id="sq_txt_'+q.id+'" style="min-height:44px" placeholder="Nội dung câu hỏi">'+esc(q.question_text||'')+'</textarea>'
+    +'<div id="sq_optwrap_'+q.id+'" style="margin-top:4px'+(isC?'':';display:none')+'"><textarea class="input" id="sq_opt_'+q.id+'" style="min-height:44px;font-size:13px" placeholder="Mỗi dòng một đáp án">'+esc(((q.options)||[]).join('\n'))+'</textarea><div style="font-size:11px;color:var(--muted)">Mỗi dòng là một lựa chọn (chỉ dùng cho câu chọn đáp án).</div></div>'
     +'<div style="text-align:right;margin-top:4px"><button class="btn btn-danger btn-sm" onclick="delSurveyQ(\''+q.id+'\',\''+sid+'\')">Xóa</button></div></div>';}).join('');
   modal('<button class="x" onclick="closeModal()">×</button><h3>Sửa câu hỏi khảo sát</h3>'
-   +'<div style="max-height:56vh;overflow:auto">'+(rows||'<div class="empty">Chưa có câu hỏi.</div>')+'</div>'
+   +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Chọn loại câu hỏi cho từng câu: Thang điểm 1–5 (có chấm điểm), Chọn đáp án, hoặc Tự luận (thu thập ý kiến, không chấm điểm).</div>'
+   +'<div style="max-height:52vh;overflow:auto">'+(rows||'<div class="empty">Chưa có câu hỏi. Bấm “＋ Thêm câu”.</div>')+'</div>'
    +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="addSurveyQ(\''+sid+'\')">＋ Thêm câu</button>'
    +'<button class="btn btn-gold btn-sm" style="flex:1;justify-content:center" onclick="saveSurveyQ(\''+sid+'\')">Lưu tất cả</button></div>',true);
 }
@@ -1677,7 +1688,15 @@ async function addSurveyQ(sid){
 async function delSurveyQ(qid,sid){ await sb.from('survey_questions').delete().eq('id',qid); editSurveyQ(sid); }
 async function saveSurveyQ(sid){
   var ids=(window._svQIds||[]);
-  for(var i=0;i<ids.length;i++){var id=ids[i];var t=document.getElementById('sq_txt_'+id);var d=document.getElementById('sq_dim_'+id);if(t)await sb.from('survey_questions').update({question_text:t.value.trim(),dimension:(d&&d.value.trim())||null}).eq('id',id);}
+  for(var i=0;i<ids.length;i++){var id=ids[i];
+    var t=document.getElementById('sq_txt_'+id); if(!t)continue;
+    var d=document.getElementById('sq_dim_'+id);
+    var ty=(document.getElementById('sq_type_'+id)||{}).value||'likert5';
+    var op=document.getElementById('sq_opt_'+id);
+    var options=[];
+    if((ty==='single'||ty==='multi')&&op){options=op.value.split('\n').map(function(x){return x.trim();}).filter(Boolean);}
+    await sb.from('survey_questions').update({question_text:t.value.trim(),dimension:(d&&d.value.trim())||null,qtype:ty,options:options}).eq('id',id);
+  }
   closeModal(); toast('Đã lưu câu hỏi'); renderSurveys();
 }
 async function setSurveyStatus(sid,st){
@@ -1713,7 +1732,28 @@ function surveyDashboard(sid){
 }
 async function loadSurveyDash(){
   var r=await sb.from('survey_responses').select('*').eq('survey_id',window._svSid).order('submitted_at',{ascending:false});
-  window._svResp=r.data||[]; renderSurveyDash();
+  window._svResp=r.data||[];
+  var q=await sb.from('survey_questions').select('*').eq('survey_id',window._svSid).order('order_index');
+  window._svQs=q.data||[];
+  renderSurveyDash();
+}
+function svOtherHtml(list){
+  var qs=(window._svQs||[]).filter(function(q){return q.qtype&&q.qtype!=='likert5';});
+  if(!qs.length)return '';
+  var html='<div style="margin-top:14px"><div style="font-weight:700;margin-bottom:6px">Câu hỏi chọn đáp án & ý kiến</div>';
+  qs.forEach(function(q){
+    html+='<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px"><div style="font-weight:600;font-size:13.5px;margin-bottom:6px">'+esc(q.question_text)+'</div>';
+    if(q.qtype==='single'||q.qtype==='multi'){
+      var counts={}; (q.options||[]).forEach(function(o){counts[o]=0;});
+      list.forEach(function(r){var a=(r.answers||{})[q.id]; if(a==null)return; if(Array.isArray(a)){a.forEach(function(x){counts[x]=(counts[x]||0)+1;});}else{counts[a]=(counts[a]||0)+1;}});
+      html+=Object.keys(counts).map(function(k){var n=counts[k]||0;var pct=list.length?Math.round(n/list.length*100):0;return '<div style="margin:3px 0"><div style="display:flex;justify-content:space-between;font-size:12.5px"><span>'+esc(k)+'</span><span>'+n+' ('+pct+'%)</span></div><div style="background:#eef2f7;border-radius:6px;height:9px;overflow:hidden"><div style="background:#1668a8;height:9px;width:'+pct+'%"></div></div></div>';}).join('')||'<div style="color:#7a869a;font-size:12px">Chưa có lựa chọn nào.</div>';
+    } else {
+      var texts=list.map(function(r){return (r.answers||{})[q.id];}).filter(function(x){return x&&(''+x).trim();});
+      html+= texts.length ? ('<div style="max-height:160px;overflow:auto">'+texts.slice(0,80).map(function(t){return '<div style="border-left:3px solid var(--gold);padding:4px 8px;margin:4px 0;background:#fafbff;font-size:13px">“'+esc(t)+'”</div>';}).join('')+'</div>'+(texts.length>80?'<div style="font-size:11px;color:#7a869a">…và '+(texts.length-80)+' ý kiến khác (xem đầy đủ ở Excel).</div>':'')) : '<div style="color:#7a869a;font-size:12px">Chưa có ý kiến.</div>';
+    }
+    html+='</div>';
+  });
+  return html+'</div>';
 }
 function renderSurveyDash(){
   var all=window._svResp||[];
@@ -1731,12 +1771,18 @@ function renderSurveyDash(){
   var weak=dsorted.slice(0,3);
   var rmap=weak.length?('<ol style="margin:6px 0 0;padding-left:18px;font-size:13.5px">'+weak.map(function(w){return '<li><b>'+esc(w.k)+'</b> ('+w.v+'%) — ưu tiên đào tạo & xây bài giảng/thực hành cho nhóm này.</li>';}).join('')+'</ol>'):'<div style="color:#7a869a">Chưa đủ dữ liệu.</div>';
   var rows=list.slice(0,300).map(function(r){return '<tr><td>'+esc(r.respondent_name||'(ẩn danh)')+'</td><td>'+esc(r.department||'')+'</td><td>'+esc(r.position||'')+'</td><td><b>'+(r.overall_percent||0)+'%</b></td><td>'+esc(r.level||'')+'</td><td>'+(r.submitted_at?new Date(r.submitted_at).toLocaleDateString('vi-VN'):'')+'</td></tr>';}).join('');
+  var hasLikert=(window._svQs||[]).some(function(q){return !q.qtype||q.qtype==='likert5';});
+  var scoreBlock = hasLikert ? (
+      '<div class="kpis" style="grid-template-columns:repeat(2,1fr)"><div class="kpi"><b>'+A.total+'</b><span>Phản hồi</span></div><div class="kpi"><b>'+A.overall+'%</b><span>Điểm TB</span></div></div>'
+     +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px"><div style="flex:1;min-width:240px"><div style="font-weight:700;margin-bottom:6px">Phân bố mức</div>'+lvBars+'</div><div style="flex:1;min-width:260px;text-align:center"><div style="font-weight:700;margin-bottom:6px">Điểm theo các chiều</div>'+radar+'</div></div>'
+     +'<div style="border:1px solid #F2B84B;background:#fffdf3;border-radius:10px;padding:12px;margin-top:12px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><b style="color:#8a5a00">🧭 Đề xuất lộ trình đào tạo (ưu tiên chiều yếu)</b><button class="btn btn-navy btn-sm" onclick="surveyRoadmapAI()">✨ Đề xuất chi tiết</button></div>'+rmap+'<div id="svRoadmapAI" style="margin-top:8px"></div></div>'
+   ) : '<div class="kpis" style="grid-template-columns:1fr"><div class="kpi"><b>'+A.total+'</b><span>Phản hồi</span></div></div>';
+  var tRows=list.slice(0,300).map(function(r){return '<tr><td>'+esc(r.respondent_name||'(ẩn danh)')+'</td><td>'+esc(r.department||'')+'</td><td>'+esc(r.position||'')+'</td>'+(hasLikert?'<td><b>'+(r.overall_percent||0)+'%</b></td><td>'+esc(r.level||'')+'</td>':'')+'<td>'+(r.submitted_at?new Date(r.submitted_at).toLocaleDateString('vi-VN'):'')+'</td></tr>';}).join('');
   document.getElementById('svDashBody').innerHTML=
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><select class="input" id="svfDept" onchange="renderSurveyDash()" style="flex:1;min-width:150px">'+deptOpt+'</select><select class="input" id="svfPos" onchange="renderSurveyDash()" style="flex:1;min-width:150px">'+posOpt+'</select><button class="btn btn-gold btn-sm" onclick="exportSurveyXlsx()">⬇️ Xuất Excel</button></div>'
-    +'<div class="kpis" style="grid-template-columns:repeat(2,1fr)"><div class="kpi"><b>'+A.total+'</b><span>Phản hồi</span></div><div class="kpi"><b>'+A.overall+'%</b><span>Điểm TB</span></div></div>'
-    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px"><div style="flex:1;min-width:240px"><div style="font-weight:700;margin-bottom:6px">Phân bố mức sẵn sàng</div>'+lvBars+'</div><div style="flex:1;min-width:260px;text-align:center"><div style="font-weight:700;margin-bottom:6px">Điểm theo các chiều</div>'+radar+'</div></div>'
-    +'<div style="border:1px solid #F2B84B;background:#fffdf3;border-radius:10px;padding:12px;margin-top:12px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><b style="color:#8a5a00">🧭 Đề xuất lộ trình đào tạo (ưu tiên chiều yếu)</b><button class="btn btn-navy btn-sm" onclick="surveyRoadmapAI()">✨ Đề xuất chi tiết</button></div>'+rmap+'<div id="svRoadmapAI" style="margin-top:8px"></div></div>'
-    +'<div style="max-height:34vh;overflow:auto;margin-top:12px"><table><thead><tr><th>Người tham gia</th><th>Phòng ban</th><th>Chức vụ</th><th>Điểm</th><th>Mức</th><th>Ngày</th></tr></thead><tbody>'+(rows||'<tr><td colspan="6" class="empty">Chưa có phản hồi.</td></tr>')+'</tbody></table></div>';
+    +scoreBlock
+    +svOtherHtml(list)
+    +'<div style="max-height:34vh;overflow:auto;margin-top:12px"><table><thead><tr><th>Người tham gia</th><th>Phòng ban</th><th>Chức vụ</th>'+(hasLikert?'<th>Điểm</th><th>Mức</th>':'')+'<th>Ngày</th></tr></thead><tbody>'+(tRows||'<tr><td colspan="6" class="empty">Chưa có phản hồi.</td></tr>')+'</tbody></table></div>';
 }
 function exportSurveyXlsx(){
   var all=window._svResp||[];
@@ -1750,7 +1796,14 @@ function exportSurveyXlsx(){
   sum.push(['','']); sum.push(['Điểm trung bình theo chiều','']); Object.keys(A.dims).forEach(function(k){sum.push([k,A.dims[k]+'%']);});
   var wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sum),'Tổng hợp');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Chi tiết');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Điểm số');
+  var qs=window._svQs||[];
+  if(qs.length){
+    var ah=['Người tham gia','Phòng ban','Chức vụ','Ngày'].concat(qs.map(function(q,i){return (i+1)+'. '+(q.question_text||'').slice(0,60);}));
+    var arows=[ah];
+    all.forEach(function(r){var a=r.answers||{};arows.push([r.respondent_name||'(ẩn danh)',r.department||'',r.position||'',r.submitted_at?new Date(r.submitted_at).toLocaleDateString('vi-VN'):''].concat(qs.map(function(q){var v=a[q.id];if(v==null)return '';if(Array.isArray(v))return v.join(', ');return ''+v;})));});
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(arows),'Câu trả lời');
+  }
   XLSX.writeFile(wb,'KhaoSat_'+slugify(window._svTitle||'survey')+'.xlsx');
   toast('Đã xuất Excel 📊');
 }
